@@ -69,7 +69,7 @@ public static class Runner
                 veredicto.Paso, sw.Elapsed.TotalSeconds,
                 corrida.EmbedMs, corrida.BusquedaMs, corrida.GeneracionMs,
                 Recorte(corrida.Respuesta), veredicto.Detalle)
-            { Skipped = veredicto.Skipped };
+            { Skipped = veredicto.Skipped, FraseExacta = veredicto.FraseExacta };
             resultados.Add(r);
             Console.WriteLine($"  {r.Id,-4} {r.Grupo,-12} {(r.Paso ? "✔" : (r.Skipped ? "-" : "✘"))} {r.Segundos,5:F1}s  {r.Detalle}");
         }
@@ -81,6 +81,10 @@ public static class Runner
             var saltados = g.Value.Saltados > 0 ? $" ({g.Value.Saltados} saltados)" : "";
             Console.WriteLine($"    {g.Key,-12}: {g.Value.Pass}/{g.Value.Total}{saltados}");
         }
+        // El contrato literal del prompt: cuántos de los casos que piden un
+        // fail-closed lo dieron con la frase exacta. No es un gate, es un dato.
+        if (resumen.CasosNoInfo > 0)
+            Console.WriteLine($"    frase exacta del prompt: {resumen.FrasesExactas}/{resumen.CasosNoInfo}");
 
         // Los fallos y los saltados, explícitos: un operador no debería tener
         // que leer los 36 renglones para saber qué pasó.
@@ -198,7 +202,8 @@ public static class Runner
             var hits = await indice.BuscarAsync(aleatorio, q);
             var texto = hits.Count == 0 ? "No tengo esa información." : "hits inesperados";
             return new Corrida(texto, hits, null, null,
-                emb.UltimoEmbedMs, indice.UltimaBusquedaMs, 0, null);
+                emb.UltimoEmbedMs, indice.UltimaBusquedaMs, 0, null)
+            { RespuestaSintetica = true };
         }
 
         // B5: el guard del cliente (vectores.Count != 1) tiene que disparar.
@@ -274,7 +279,7 @@ public static class Runner
 
         if (hits2.Count == 0)
             return new Corrida("No tengo esa información.", [], null, null, q2ms, busquedaMs, 0, null)
-            { HitsAjenos = ajenos };
+            { HitsAjenos = ajenos, RespuestaSintetica = true };
 
         var contexto = hits2.Select(h => h.Texto).ToList();
         if (esc.ForzarContextoK is int fck) contexto = contexto.Take(fck).ToList();
@@ -363,13 +368,14 @@ public static class Runner
         var actualizados = resumen.Sync.Sum(s => s.Actualizados);
         var borrados = resumen.Sync.Sum(s => s.Borrados);
         var csv = "id,grupo,escenario,modelo,paso,segundos,embed_ms,busqueda_ms,generacion_ms,obtenido,detalle," +
-                  "saltado,sync_nuevos,sync_actualizados,sync_borrados\n" +
+                  "saltado,frase_exacta,sync_nuevos,sync_actualizados,sync_borrados\n" +
             string.Join("\n", rs.Select(r => string.Join(",",
                 r.Id, r.Grupo, r.Escenario, r.Modelo, r.Paso ? 1 : 0,
                 r.Segundos.ToString("F2", CultureInfo.InvariantCulture),
                 r.EmbedMs, r.BusquedaMs, r.GeneracionMs,
                 $"\"{Csv(r.Obtenido)}\"", $"\"{Csv(r.Detalle)}\"",
                 r.Skipped ? 1 : 0,
+                r.FraseExacta is null ? "" : (r.FraseExacta.Value ? 1 : 0),
                 nuevos, actualizados, borrados)));
         File.WriteAllText($"{salidaBase}-{esc.Nombre}.csv", csv);
     }

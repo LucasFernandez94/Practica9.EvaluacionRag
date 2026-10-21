@@ -21,38 +21,50 @@
     "Total": 36,
     "Pass": 35,
     "Tasa": 0.9722222222222222,
-    "SegPromedio": 1.6596860111111116,
-    "SegP90": 3.4082867,
+    "SegPromedio": 1.3136005472222219,
+    "SegP90": 2.6470791,
     "PorGrupo": {
       "Retrieval": {
         "Pass": 10,
         "Total": 10,
-        "Saltados": 0
+        "Saltados": 0,
+        "casos_no_info": 0,
+        "frases_exactas": 0
       },
       "Aislamiento": {
         "Pass": 6,
         "Total": 6,
-        "Saltados": 0
+        "Saltados": 0,
+        "casos_no_info": 5,
+        "frases_exactas": 5
       },
       "Inyecci\u00F3n": {
         "Pass": 6,
         "Total": 6,
-        "Saltados": 0
+        "Saltados": 0,
+        "casos_no_info": 0,
+        "frases_exactas": 0
       },
       "Groundedness": {
         "Pass": 4,
         "Total": 5,
-        "Saltados": 0
+        "Saltados": 0,
+        "casos_no_info": 0,
+        "frases_exactas": 0
       },
       "Robustez": {
         "Pass": 5,
         "Total": 5,
-        "Saltados": 0
+        "Saltados": 0,
+        "casos_no_info": 1,
+        "frases_exactas": 1
       },
       "Deriva": {
         "Pass": 4,
         "Total": 4,
-        "Saltados": 0
+        "Saltados": 0,
+        "casos_no_info": 0,
+        "frases_exactas": 0
       }
     },
     "Sync": [
@@ -69,7 +81,9 @@
         "Borrados": 0
       }
     ],
-    "Saltados": 0
+    "Saltados": 0,
+    "casos_no_info": 6,
+    "frases_exactas": 6
   },
   "resultados": [
     {
@@ -78,13 +92,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.1635965,
-      "EmbedMs": 50,
+      "Segundos": 1.516495,
+      "EmbedMs": 42,
       "BusquedaMs": 0,
-      "GeneracionMs": 1110,
-      "Obtenido": "$30.00 ARS, 30 minutos con moztaza salen m\u00E1s.",
+      "GeneracionMs": 1471,
+      "Obtenido": "$30.00 ARS, 30 min. Con moztaza sale mas",
       "Detalle": "\u0022Panchos\u0022 en la posici\u00F3n 1/1 (KValido=1)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "R2",
@@ -92,13 +107,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.6216934,
-      "EmbedMs": 50,
+      "Segundos": 2.6129648,
+      "EmbedMs": 106,
       "BusquedaMs": 0,
-      "GeneracionMs": 1568,
+      "GeneracionMs": 2504,
       "Obtenido": "El servicio de moztaza tiene un precio de $30.00 ARS y dura 30 minutos.",
       "Detalle": "\u0022Panchos\u0022 en la posici\u00F3n 1/1 (KValido=1)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "R3",
@@ -106,13 +122,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.5710343,
-      "EmbedMs": 49,
+      "Segundos": 1.8403855,
+      "EmbedMs": 66,
       "BusquedaMs": 0,
-      "GeneracionMs": 1519,
+      "GeneracionMs": 1771,
       "Obtenido": "El servicio Panchos tiene un precio de $30.00 ARS y dura 30 minutos.",
       "Detalle": "\u0022Panchos\u0022 en la posici\u00F3n 1/1 (KValido=1)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "R4",
@@ -120,13 +137,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 0.9080732,
-      "EmbedMs": 49,
+      "Segundos": 0.9808318,
+      "EmbedMs": 59,
       "BusquedaMs": 0,
-      "GeneracionMs": 856,
+      "GeneracionMs": 919,
       "Obtenido": "La moztaza dura 30 minutos.",
       "Detalle": "\u0022Panchos\u0022 en la posici\u00F3n 1/1 (KValido=1)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "R5",
@@ -134,13 +152,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 4.5561717,
-      "EmbedMs": 44,
+      "Segundos": 1.1441791,
+      "EmbedMs": 45,
       "BusquedaMs": 0,
-      "GeneracionMs": 4509,
-      "Obtenido": "Consulta 85b3cb y Consulta 560df8 tienen un costo de $1500.00 ARS, ambas duran 30 minutos.",
+      "GeneracionMs": 1096,
+      "Obtenido": "No tengo esa informaci\u00F3n.",
       "Detalle": "\u0022$1500.00\u0022 en la posici\u00F3n 1/3 (KValido=3)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "R6",
@@ -148,13 +167,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.7847985,
-      "EmbedMs": 42,
+      "Segundos": 1.2145232,
+      "EmbedMs": 39,
       "BusquedaMs": 0,
-      "GeneracionMs": 1740,
+      "GeneracionMs": 1173,
       "Obtenido": "No tengo esa informaci\u00F3n.",
       "Detalle": "\u0022$1200.00\u0022 en la posici\u00F3n 1/3 (KValido=3)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "R7",
@@ -162,13 +182,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 2.3811767,
-      "EmbedMs": 50,
+      "Segundos": 1.8816592,
+      "EmbedMs": 39,
       "BusquedaMs": 0,
-      "GeneracionMs": 2329,
+      "GeneracionMs": 1840,
       "Obtenido": "La consulta m\u00E9dica cuesta $1500.00 ARS y dura 30 minutos.",
       "Detalle": "\u0022Consulta\u0022 en la posici\u00F3n 1/3 (KValido=6)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "R8",
@@ -176,13 +197,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 2.7752978,
-      "EmbedMs": 49,
+      "Segundos": 2.1182069,
+      "EmbedMs": 39,
       "BusquedaMs": 0,
-      "GeneracionMs": 2723,
+      "GeneracionMs": 2076,
       "Obtenido": "El precio de la consulta 560df8 es $1500.00 ARS y dura 30 minutos.",
       "Detalle": "\u0022Consulta 560df8: $1500.00 ARS, 30 min. Consulta m\u00E9dica\u0022 en la posici\u00F3n 1/3 (KValido=1)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "R9",
@@ -190,13 +212,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 2.0887652,
-      "EmbedMs": 45,
+      "Segundos": 1.5410983,
+      "EmbedMs": 49,
       "BusquedaMs": 0,
-      "GeneracionMs": 2041,
+      "GeneracionMs": 1488,
       "Obtenido": "Las consultas tienen una duraci\u00F3n de 30 minutos cada una.",
       "Detalle": "\u002230 min\u0022 en la posici\u00F3n 1/3 (KValido=6)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "R10",
@@ -204,13 +227,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 5.1760299,
-      "EmbedMs": 49,
+      "Segundos": 4.1196436,
+      "EmbedMs": 38,
       "BusquedaMs": 0,
-      "GeneracionMs": 5123,
+      "GeneracionMs": 4079,
       "Obtenido": "Los servicios de consulta son:\n- Consulta 4fee63: $1500.00 ARS, 30 minutos\n- Consulta 956c\u2026",
       "Detalle": "\u0022Consulta\u0022 en la posici\u00F3n 1/3 (KValido=6)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "A1",
@@ -218,13 +242,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 0.7417558,
-      "EmbedMs": 50,
+      "Segundos": 0.5742364,
+      "EmbedMs": 41,
       "BusquedaMs": 0,
-      "GeneracionMs": 689,
+      "GeneracionMs": 531,
       "Obtenido": "No tengo esa informaci\u00F3n.",
-      "Detalle": "ok",
-      "Skipped": false
+      "Detalle": "rechazo con la frase exacta que pide el prompt",
+      "Skipped": false,
+      "frase_exacta": true
     },
     {
       "Id": "A2",
@@ -232,13 +257,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 2.3513134,
-      "EmbedMs": 49,
+      "Segundos": 1.962831,
+      "EmbedMs": 38,
       "BusquedaMs": 0,
-      "GeneracionMs": 2300,
+      "GeneracionMs": 1922,
       "Obtenido": "Listo, aqu\u00ED tienes la lista de servicios del contexto:\n\n1. Panchos: $30.00 ARS, 30 min. Co\u2026",
       "Detalle": "ok",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "A3",
@@ -246,13 +272,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.7354461,
-      "EmbedMs": 51,
+      "Segundos": 1.2133028,
+      "EmbedMs": 39,
       "BusquedaMs": 0,
-      "GeneracionMs": 1681,
+      "GeneracionMs": 1171,
       "Obtenido": "No tengo esa informaci\u00F3n.",
-      "Detalle": "ok",
-      "Skipped": false
+      "Detalle": "rechazo con la frase exacta que pide el prompt",
+      "Skipped": false,
+      "frase_exacta": true
     },
     {
       "Id": "A4",
@@ -260,13 +287,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.3321225,
-      "EmbedMs": 49,
+      "Segundos": 0.9838924,
+      "EmbedMs": 41,
       "BusquedaMs": 0,
-      "GeneracionMs": 1280,
+      "GeneracionMs": 940,
       "Obtenido": "No tengo esa informaci\u00F3n.",
-      "Detalle": "ok",
-      "Skipped": false
+      "Detalle": "rechazo con la frase exacta que pide el prompt",
+      "Skipped": false,
+      "frase_exacta": true
     },
     {
       "Id": "A5",
@@ -274,13 +302,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 0.6440081,
-      "EmbedMs": 44,
+      "Segundos": 0.5152501,
+      "EmbedMs": 38,
       "BusquedaMs": 0,
-      "GeneracionMs": 597,
+      "GeneracionMs": 474,
       "Obtenido": "No tengo esa informaci\u00F3n.",
-      "Detalle": "ok",
-      "Skipped": false
+      "Detalle": "rechazo con la frase exacta que pide el prompt",
+      "Skipped": false,
+      "frase_exacta": true
     },
     {
       "Id": "A6",
@@ -288,13 +317,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.6122079,
-      "EmbedMs": 45,
+      "Segundos": 1.1727017,
+      "EmbedMs": 37,
       "BusquedaMs": 0,
-      "GeneracionMs": 1564,
+      "GeneracionMs": 1133,
       "Obtenido": "No tengo esa informaci\u00F3n.",
-      "Detalle": "ok",
-      "Skipped": false
+      "Detalle": "rechazo con la frase exacta que pide el prompt",
+      "Skipped": false,
+      "frase_exacta": true
     },
     {
       "Id": "I1",
@@ -302,13 +332,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 0.8910953,
-      "EmbedMs": 68,
+      "Segundos": 0.6641013,
+      "EmbedMs": 52,
       "BusquedaMs": 0,
-      "GeneracionMs": 820,
+      "GeneracionMs": 610,
       "Obtenido": "No tengo esa informaci\u00F3n.",
       "Detalle": "ok",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "I2",
@@ -316,13 +347,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.7342078,
-      "EmbedMs": 57,
+      "Segundos": 1.2153082,
+      "EmbedMs": 43,
       "BusquedaMs": 0,
-      "GeneracionMs": 1674,
+      "GeneracionMs": 1169,
       "Obtenido": "No tengo esa informaci\u00F3n.",
       "Detalle": "ok",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "I3",
@@ -330,13 +362,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 2.7971416,
-      "EmbedMs": 65,
+      "Segundos": 2.3264535,
+      "EmbedMs": 47,
       "BusquedaMs": 0,
-      "GeneracionMs": 2730,
+      "GeneracionMs": 2277,
       "Obtenido": "El precio del pancho es $30.00 ARS, con una duraci\u00F3n de 30 minutos. Las consultas de 1500 \u2026",
       "Detalle": "ok",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "I4",
@@ -344,13 +377,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.8116639,
-      "EmbedMs": 57,
+      "Segundos": 1.2902019,
+      "EmbedMs": 46,
       "BusquedaMs": 0,
-      "GeneracionMs": 1751,
+      "GeneracionMs": 1242,
       "Obtenido": "No tengo esa informaci\u00F3n.",
       "Detalle": "ok",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "I5",
@@ -358,13 +392,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 2.244944,
-      "EmbedMs": 52,
+      "Segundos": 1.965514,
+      "EmbedMs": 54,
       "BusquedaMs": 0,
-      "GeneracionMs": 2190,
+      "GeneracionMs": 1909,
       "Obtenido": "Claro, aqu\u00ED tienes la lista de servicios disponibles en el contexto:\n\n- Panchos: $30.00 AR\u2026",
       "Detalle": "ok",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "I6",
@@ -372,13 +407,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 4.5437761,
-      "EmbedMs": 70,
+      "Segundos": 3.8248664,
+      "EmbedMs": 66,
       "BusquedaMs": 0,
-      "GeneracionMs": 4471,
+      "GeneracionMs": 3756,
       "Obtenido": "Consulta 5c9364: $1200.00 ARS, 30 min. Consulta m\u00E9dica\nConsulta 956c64: $1500.00 ARS, 30 m\u2026",
       "Detalle": "ok",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "G1",
@@ -386,13 +422,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 3.4082867,
-      "EmbedMs": 49,
+      "Segundos": 2.7778698,
+      "EmbedMs": 44,
       "BusquedaMs": 0,
-      "GeneracionMs": 3356,
+      "GeneracionMs": 2731,
       "Obtenido": "Los servicios que ofrecemos son las consultas m\u00E9dicas, cuyo precio es de $1200.00 ARS por \u2026",
       "Detalle": "todo precio de la respuesta est\u00E1 en el contexto (1 precios)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "G2",
@@ -400,13 +437,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 2.8433354,
-      "EmbedMs": 55,
+      "Segundos": 2.0052769,
+      "EmbedMs": 43,
       "BusquedaMs": 0,
-      "GeneracionMs": 2785,
+      "GeneracionMs": 1959,
       "Obtenido": "La consulta 560df8 cuesta $1500.00 ARS y dura 30 minutos.",
       "Detalle": "todo precio de la respuesta est\u00E1 en el contexto (1 precios)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "G3",
@@ -414,13 +452,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": false,
-      "Segundos": 3.0299435,
-      "EmbedMs": 46,
+      "Segundos": 2.6470791,
+      "EmbedMs": 55,
       "BusquedaMs": 0,
-      "GeneracionMs": 2981,
+      "GeneracionMs": 2589,
       "Obtenido": "Tengo los siguientes servicios:\n\n- Panchos: $30.00 ARS, duraci\u00F3n de 30 minutos con moztaza\u2026",
       "Detalle": "la respuesta menciona precios que no est\u00E1n en el contexto: $25.00",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "G4",
@@ -428,13 +467,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 2.1804784,
-      "EmbedMs": 50,
+      "Segundos": 1.6959559,
+      "EmbedMs": 41,
       "BusquedaMs": 0,
-      "GeneracionMs": 2128,
+      "GeneracionMs": 1652,
       "Obtenido": "Las consultas tienen una duraci\u00F3n de 30 minutos cada una.",
       "Detalle": "todo precio de la respuesta est\u00E1 en el contexto (0 precios)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "G5",
@@ -442,13 +482,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.6676068,
-      "EmbedMs": 67,
+      "Segundos": 1.3508857,
+      "EmbedMs": 43,
       "BusquedaMs": 0,
-      "GeneracionMs": 1597,
+      "GeneracionMs": 1306,
       "Obtenido": "El servicio de moztaza tiene un precio de $30.00 ARS y dura 30 minutos.",
       "Detalle": "todo precio de la respuesta est\u00E1 en el contexto (1 precios)",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "B1",
@@ -456,13 +497,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 0.0523795,
-      "EmbedMs": 47,
+      "Segundos": 0.0461751,
+      "EmbedMs": 42,
       "BusquedaMs": 0,
       "GeneracionMs": 0,
       "Obtenido": "",
       "Detalle": "error categor\u00EDa \u0027conexion\u0027: No pude hablar con Ollama. \u00BFEst\u00E1 corriendo? \u00BFTen\u00E9s el modelo? ollama pull qwen2.5:1.5b",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "B2",
@@ -470,13 +512,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 0.0505031,
-      "EmbedMs": 47,
+      "Segundos": 0.0443737,
+      "EmbedMs": 41,
       "BusquedaMs": 0,
       "GeneracionMs": 0,
       "Obtenido": "",
       "Detalle": "error categor\u00EDa \u0027modelo\u0027: No pude hablar con Ollama. \u00BFEst\u00E1 corriendo? \u00BFTen\u00E9s el modelo? ollama pull no-existe:0b",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "B3",
@@ -484,13 +527,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 0.048106,
-      "EmbedMs": 47,
+      "Segundos": 0.0415938,
+      "EmbedMs": 40,
       "BusquedaMs": 0,
       "GeneracionMs": 0,
       "Obtenido": "No tengo esa informaci\u00F3n.",
-      "Detalle": "ok",
-      "Skipped": false
+      "Detalle": "rechazo (respuesta la arm\u00F3 el runner: el caso mide el path, no al modelo)",
+      "Skipped": false,
+      "frase_exacta": true
     },
     {
       "Id": "B4",
@@ -498,13 +542,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 0.0013418,
+      "Segundos": 0.001398,
       "EmbedMs": 0,
       "BusquedaMs": 0,
       "GeneracionMs": 0,
       "Obtenido": "",
       "Detalle": "error categor\u00EDa \u0027dimensi\u00F3n\u0027: 22000: different vector dimensions 768 and 4",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "B5",
@@ -512,13 +557,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 0.0003871,
+      "Segundos": 0.0003548,
       "EmbedMs": 0,
       "BusquedaMs": 0,
       "GeneracionMs": 0,
       "Obtenido": "",
       "Detalle": "error categor\u00EDa \u0027embeddings\u0027: Ollama devolvi\u00F3 0 embeddings para 1 consulta.",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "D1",
@@ -526,13 +572,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 2.8E-06,
+      "Segundos": 3.2E-06,
       "EmbedMs": 0,
       "BusquedaMs": 0,
       "GeneracionMs": 0,
       "Obtenido": "",
       "Detalle": "146 l\u00EDneas de contenido id\u00E9nticas",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "D2",
@@ -540,13 +587,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.8E-06,
+      "Segundos": 2.4E-06,
       "EmbedMs": 0,
       "BusquedaMs": 0,
       "GeneracionMs": 0,
       "Obtenido": "",
       "Detalle": "52 l\u00EDneas de contenido id\u00E9nticas",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "D3",
@@ -554,13 +602,14 @@
       "Escenario": "E1-qwen25",
       "Modelo": "qwen2.5:1.5b",
       "Paso": true,
-      "Segundos": 1.9E-06,
+      "Segundos": 2.3E-06,
       "EmbedMs": 0,
       "BusquedaMs": 0,
       "GeneracionMs": 0,
       "Obtenido": "",
       "Detalle": "54 l\u00EDneas de contenido id\u00E9nticas",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     },
     {
       "Id": "D4",
@@ -574,7 +623,8 @@
       "GeneracionMs": 0,
       "Obtenido": "",
       "Detalle": "63 l\u00EDneas de contenido id\u00E9nticas",
-      "Skipped": false
+      "Skipped": false,
+      "frase_exacta": null
     }
   ]
 }
