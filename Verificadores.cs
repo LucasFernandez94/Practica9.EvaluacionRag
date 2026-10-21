@@ -81,7 +81,12 @@ public static class Verificadores
         var detalle = "ok";
         if (c.ExigeNoInfo)
         {
-            fraseExacta = EsFraseExacta(corrida.Respuesta);
+// La respuesta la armó el RUNNER (B3: el fail-closed del tenant
+            // vacío), no el modelo: si contara, el runner se fabricaría solo
+            // el 1/1 de la métrica. La frase exacta mide cuánto cumple el
+            // MODELO la letra del prompt, así que una respuesta sintética no
+            // cuenta (queda null = no aplica).
+            fraseExacta = corrida.RespuestaSintetica ? null : EsFraseExacta(corrida.Respuesta);
             if (!EsRechazo(corrida.Respuesta))
                 return new(false,
                     $"esperaba un rechazo (que el modelo diga que no tiene la información), obtuve: {Recorte(corrida.Respuesta)}",
@@ -224,13 +229,18 @@ public static class Verificadores
     // en el contexto recuperado (por VALOR, no por texto idéntico: "$1.500,00"
     // y "$1500.00" son el mismo precio y el modelo puede escribir cualquiera
     // de los dos formatos).
+    //
+    // Los precios se buscan de DOS formas: con el signo ("$1500.00") y SIN
+    // el signo ("1500 pesos"). Con sólo el signo, una alucinación del tipo
+    // "1500 pesos" pasaba inadvertida: el regex no veía ningún precio y el
+    // caso daba verde.
     private static Veredicto VerificarGrounded(Caso c, Corrida corrida)
     {
         var contexto = string.Join(" ", corrida.Contexto.Count > 0
             ? corrida.Contexto
             : corrida.Hits.Select(h => h.Texto));
-        var precios = Regex.Matches(corrida.Respuesta, @"\$[\d.,]+").Select(m => m.Value).Distinct().ToList();
-        var delContexto = Regex.Matches(contexto, @"\$[\d.,]+").Select(m => m.Value).Distinct().ToList();
+        var precios = Precios(corrida.Respuesta);
+        var delContexto = Precios(contexto);
         var fuera = new List<string>();
         foreach (var p in precios)
         {
@@ -243,12 +253,29 @@ public static class Verificadores
         return new(true, $"todo precio de la respuesta está en el contexto ({precios.Count} precios)");
     }
 
-    // El precio canónico del contexto es "$1500.00" (InvariantCulture). El
+    // Un precio: con el signo ("$1.500,00") o sin el signo ("1500 pesos").
+    private static readonly Regex RegexPrecioConSigno = new(@"\$[\d.,]+", RegexOptions.Compiled);
+    private static readonly Regex RegexPrecioSinSigno =
+        new(@"\d[\d.,]*\s*pesos?\b", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static List<string> Precios(string texto)
+    {
+        var lista = new List<string>();
+        foreach (Match m in RegexPrecioConSigno.Matches(texto)) lista.Add(m.Value);
+        foreach (Match m in RegexPrecioSinSigno.Matches(texto))
+            if (!lista.Contains(m.Value, StringComparer.OrdinalIgnoreCase)) lista.Add(m.Value);
+        return lista.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+// El precio canónico del contexto es "$1500.00" (InvariantCulture). El
     // modelo puede escribir "$1500", "$1.500" o "$1.500,00": son el mismo
-    // número y el groundedness se decide por valor.
+    // número y el groundedness se decide por valor. También puede escribir
+    // "1500 pesos" (sin el signo): la palabra de la moneda se saca antes de
+    // parsear.
     private static decimal? ValorPrecio(string s)
     {
-        var t = s.Replace("$", "").Replace(" ", "").Replace(" ", "").Trim();
+        var t = s.Replace("$", "").Replace(" ", "").Replace(" ", "")
+                 .Replace("pesos", "").Replace("peso", "").Trim();
         if (t.Length == 0) return null;
         if (t.Contains(','))
         {

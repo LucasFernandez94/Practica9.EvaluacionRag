@@ -45,11 +45,12 @@ var flagsDesconocidos = args
 
 // Un modo o un flag desconocido NO dispara una corrida de 15 minutos: se
 // muestra la ayuda y se sale. ("dotnet run -- --comparar" no es un modo:
-// comparar no lleva guiones.)
+// comparar no lleva guiones.) El exit code es 1: es un error de invocación,
+// no un resultado de la batería.
 if (modo is not ("bateria" or "comparar" or "explorar" or "casos") || flagsDesconocidos.Count > 0)
 {
     Ayuda(modo, flagsDesconocidos);
-    return 0;
+    return 1;
 }
 
 // Los casos: --solo=<grupo> gana sobre --rapido.
