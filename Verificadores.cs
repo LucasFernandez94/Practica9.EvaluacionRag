@@ -81,7 +81,7 @@ public static class Verificadores
         var detalle = "ok";
         if (c.ExigeNoInfo)
         {
-// La respuesta la armó el RUNNER (B3: el fail-closed del tenant
+            // La respuesta la armó el RUNNER (B3: el fail-closed del tenant
             // vacío), no el modelo: si contara, el runner se fabricaría solo
             // el 1/1 de la métrica. La frase exacta mide cuánto cumple el
             // MODELO la letra del prompt, así que una respuesta sintética no

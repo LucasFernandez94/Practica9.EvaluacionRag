@@ -246,3 +246,21 @@ Los `.csv` se commitean: son el boletín.
 - Evaluar la calidad del LLM más allá de groundedness (coherencia, tono, etc.).
 - Proveedor en la nube.
 - Comparar contra la P7 (rankeaba en memoria): requeriría dos sistemas en la misma corrida.
+
+---
+
+## Enmiendas (2026-10-21)
+
+El spec quedó viejo en ocho puntos durante la implementación (siete estaban
+previstos en la revisión final y el §4.2 cayó solo: faltaba una medida de
+etapa). El texto de arriba se conserva como se aprobó; estas son las
+desviaciones, una línea cada una, con el motivo.
+
+- **§2.1** — el `KValido` **no es un número fijo**: se calcula contra el catálogo vivo (ground truth dinámico). El catálogo de `BusinessCore Demo` pasó de 6 a ~28 servicios durante la práctica, así que un `KValido` hardcodeado medía una expectativa que ya no existía.
+- **§3.2** — el fail-closed se verifica como **rechazo semántico** (que el modelo diga que no tiene la información) y la frase exacta queda como **métrica** (`frase_exacta`), no como gate: exigir la cadena literal hacía flakear el instrumento.
+- **§3.1** — el check de deriva es de **subsecuencia con inserciones marcadas**: las líneas del original tienen que aparecer, en orden, dentro de la copia, y las que sobran tienen que llevar `// EVAL`. El chequeo anterior (mismo largo + igualdad exacta) no veía una línea original modificada si llevaba el `// EVAL` al final.
+- **§4.2** — las medidas de etapa son **cinco**: al `rank` (el `SELECT` de ranking solo) se le suma el `retrieval` completo (conexión + `count(*)` + ranking), medido por el runner. Con el rank solo, "SQL ≈ 0 ms" era una afirmación sobre dónde estaba el cronómetro, no sobre el sistema.
+- **§4.3** — `ForzarK` puede **superar** el k adaptativo: es un experimento explícito por encima de la regla de la P8 (que manda top-3 con catálogo grande), no el comportamiento de la P8.
+- **§4.4** — el flag de grupo es `--solo=<grupo>` (con `=`), no `--solo <grupo>`.
+- **§5.1** — la matriz de k es **{1, 3, 6}**, con el 6 **forzado** por encima de la regla adaptativa (E3-k6 mide 6 chunks de verdad, no 3).
+- **§5.2** — el resumen incluye **p50/p95 por etapa** (embed, retrieval, rank, generación) y el archivo comparativo se llama **`resultados-comparativa.csv`** (no `comparativa.csv`).

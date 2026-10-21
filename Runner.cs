@@ -48,9 +48,10 @@ public static class Runner
         foreach (var s in sync)
             Console.WriteLine($"  sync · {s.Tenant}: {s.Nuevos} nuevos, {s.Actualizados} actualizados, {s.Borrados} borrados");
 
-        // 2) Fidelidad del Generador contra el prompt REAL de la P8. Una sola
-        //    vez por escenario: si difieren, todas las mediciones dependerían de
-        //    un prompt que no es el de la P8 y no tiene sentido seguir.
+        // 2) Fidelidad del Generador contra el BODY REAL de la P8 (el system
+        //    prompt Y el mensaje de user). Una sola vez por escenario: si
+        //    difieren, todas las mediciones dependerían de un body que no es
+        //    el de la P8 y no tiene sentido seguir.
         await VerificarFidelidadAsync(http, esc, mapa, indice, embeddings);
 
         // La deriva: si la P8 no está, el grupo D se SKIPEA.
