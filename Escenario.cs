@@ -48,7 +48,7 @@ public sealed record CatalogoTenant(
 
 // El tamaño del catálogo vivo por tenant. Va al boletín: el ground truth se
 // midió contra ESTE catálogo, y el catálogo es un moving target (el de
-// BusinessCore Demo pasó de 6 a 26 servicios durante la práctica).
+// BusinessCore Demo pasó de 6 a 28 servicios durante la práctica).
 public sealed record CatalogReporte(string Tenant, int Servicios);
 
 public sealed record Resumen(

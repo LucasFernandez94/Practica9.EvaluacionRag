@@ -151,7 +151,7 @@ public static class Runner
     // El "KValido" (cuántas respuestas son IGUALMENTE válidas) es el tamaño de
     // este conjunto, calculado contra el catálogo VIVO en cada corrida: es una
     // propiedad del catálogo, no del caso. Por eso no está hardcodeado — el
-    // catálogo de BusinessCore Demo pasó de 6 a 26 servicios durante la
+    // catálogo de BusinessCore Demo pasó de 6 a 28 servicios durante la
     // práctica y los K fijos quedaron viejos.
     private static GroundTruth GroundTruthDe(Caso caso, IReadOnlyDictionary<string, CatalogoTenant> catalogo)
     {

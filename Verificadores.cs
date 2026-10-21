@@ -16,7 +16,7 @@ public sealed record DerivaContext(IReadOnlyList<ResultadoDrift> Filas, bool Dis
 // catálogo VIVO de BusinessCore.
 //
 // Por qué no un KValido hardcodeado en el caso: el catálogo de BusinessCore
-// Demo pasó de 6 a 26 servicios durante la práctica (lo crea la suite de
+// Demo pasó de 6 a 28 servicios durante la práctica (lo crea la suite de
 // BusinessCore, no esta P9) y los K hardcodeados quedaron viejos. El "cuántas
 // respuestas son igualmente válidas" es una propiedad del CATÁLOGO, así que
 // se calcula en runtime contra el catálogo vivo.
@@ -158,7 +158,7 @@ public static class Verificadores
     //
     // Por qué el criterio es éste y no "el esperado entre las primeras K":
     // el KValido (cuántas respuestas son igualmente válidas) es una propiedad
-    // del CATÁLOGO, y el catálogo de BusinessCore Demo pasó de 6 a 26 servicios
+    // del CATÁLOGO, y el catálogo de BusinessCore Demo pasó de 6 a 28 servicios
     // durante la práctica: con un K hardcodeado el caso medía una expectativa
     // que ya no existía, y con el SQL devolviendo top-3 la exigencia
     // "el esperado entre las primeras 13" era imposible de satisfacer de

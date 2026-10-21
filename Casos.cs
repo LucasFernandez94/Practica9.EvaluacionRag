@@ -19,7 +19,7 @@ public sealed record Caso
     // IGUALMENTE válidas" se calcula en runtime contra el catálogo VIVO de
     // BusinessCore (ver GroundTruth en Verificadores.cs y GroundTruthDe en
     // Runner.cs), porque es una propiedad del CATÁLOGO: el de BusinessCore
-    // Demo pasó de 6 a 26 servicios durante la práctica y un K fijo quedó
+    // Demo pasó de 6 a 28 servicios durante la práctica y un K fijo quedó
     // viejo. El pass es "hay al menos una respuesta válida en el contexto
     // que recibió el modelo".
     public string? EsperaTexto { get; init; }
