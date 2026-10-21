@@ -282,6 +282,10 @@ public static class Runner
     {
         var tenant = mapa.ContainsKey(Casos.TenantPepe) ? Casos.TenantPepe : mapa.Keys.First();
         var pregunta = "¿cuánto sale Panchos?";
+        // La perilla de k del ESCENARIO: el check tiene que medir la misma
+        // configuración que los casos (si no, compararía dos contextos
+        // distintos).
+        indice.ForzarK = esc.ForzarK;
         var asistente = new Asistente(http, indice, embeddings, esc.Modelo)
         { ForzarContextoK = esc.ForzarContextoK };
         string? bodyP8;

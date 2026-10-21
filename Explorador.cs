@@ -88,9 +88,12 @@ public static class Explorador
                 {
                     // Las dos perillas: ForzarK recorta el LIMIT del SQL y
                     // ForzarContextoK recorta lo que se le manda al modelo.
+                    // OJO: un k forzado PUEDE SUPERAR la regla adaptativa de la
+                    // P8 (catálogo grande ⇒ top-3): es un experimento, no el
+                    // comportamiento de la P8.
                     indice.ForzarK = nk;
                     asistente.ForzarContextoK = nk;
-                    Console.WriteLine($"  k forzado a {nk} (SQL y contexto)");
+                    Console.WriteLine($"  k forzado a {nk} (SQL y contexto) — por encima de la regla adaptativa de la P8");
                 }
                 else
                 {

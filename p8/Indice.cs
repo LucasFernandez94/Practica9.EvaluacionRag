@@ -143,7 +143,7 @@ public sealed class Indice(string connStr)
         // maximo <= 0 daría LIMIT 0 → lista vacía → un "No tengo esa información."
         // falso. El corte mínimo es 1 chunk.
         var k = total <= 8 ? total : Math.Max(1, maximo);
-        if (ForzarK is int fk) k = Math.Min(fk, k); // EVAL: forzado de k (P9) — el SQL devuelve menos filas, no menos contexto
+        if (ForzarK is int fk) k = Math.Max(1, fk); // EVAL: forzado de k (P9) — EXPERIMENTO por encima de la regla adaptativa: con k=6 el SQL trae 6 chunks aunque la P8 mande 3
 
         var swBusqueda = System.Diagnostics.Stopwatch.StartNew(); // EVAL: medición (P9) — el stopwatch cierra al final del SELECT, no acá: si cerrara acá mediría 0 ms
         await using var rank = new NpgsqlCommand(
