@@ -200,7 +200,9 @@ public static class Runner
     // caso, no se prohíbe (sería un eco del usuario, no una fuga). Por eso A1
     // (que pregunta por "Consulta 560df8") no prohíbe ese nombre, pero sí los
     // otros del catálogo.
-    private static ProhibicionesDinamicas ProhibicionesDelOtroTenant(
+    // PUBLIC: el autotest del instrumento la usa para probar la protección
+    // de datos sin tocar la DB (con un catálogo sintético).
+    public static ProhibicionesDinamicas ProhibicionesDelOtroTenant(
         Caso caso, IReadOnlyDictionary<string, CatalogoTenant> catalogo)
     {
         // Sólo el grupo A (aislamiento) y el I (inyección) miden fugas cross-tenant.

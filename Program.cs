@@ -47,7 +47,7 @@ var flagsDesconocidos = args
 // muestra la ayuda y se sale. ("dotnet run -- --comparar" no es un modo:
 // comparar no lleva guiones.) El exit code es 1: es un error de invocación,
 // no un resultado de la batería.
-if (modo is not ("bateria" or "comparar" or "explorar" or "casos") || flagsDesconocidos.Count > 0)
+if (modo is not ("bateria" or "comparar" or "explorar" or "casos" or "autotest") || flagsDesconocidos.Count > 0)
 {
     Ayuda(modo, flagsDesconocidos);
     return 1;
@@ -133,6 +133,11 @@ try
         case "casos":
             ListarCasos(casos);
             break;
+        case "autotest":
+            // El instrumento medido a sí mismo: las reglas críticas (la del
+            // eco, la protección de datos, el groundedness y el check de
+            // deriva) contra respuestas preparadas a mano. No corre la DB.
+            return Autotest.Run(raizP9);
         case "bateria":
             Console.WriteLine($"  {(parcial ? "corrida parcial" : "corrida completa")} · escritura: {salidaBase}*");
             var r = await Runner.CorrerAsync(casos, escenario, env, salidaBase);
@@ -162,7 +167,7 @@ return 0;
 // un flag no se entienden (y en vez de correr la batería a ciegas).
 static void Ayuda(string modo, IReadOnlyList<string> flagsDesconocidos)
 {
-    if (modo is not ("bateria" or "comparar" or "explorar" or "casos"))
+    if (modo is not ("bateria" or "comparar" or "explorar" or "casos" or "autotest"))
         Console.WriteLine($"[error] Modo desconocido: \"{modo}\".");
     foreach (var f in flagsDesconocidos)
         Console.WriteLine($"[error] Flag desconocido: \"{f}\" (los modos no llevan guiones: \"{f.TrimStart('-')}\").");
@@ -174,6 +179,8 @@ static void Ayuda(string modo, IReadOnlyList<string> flagsDesconocidos)
       comparar   los 7 escenarios de la comparativa → resultados-<escenario>.csv/.json
       explorar   el chat de diagnóstico: pregunta → embedding, top-k, respuesta y veredicto
       casos      lista la batería (id, grupo, tenant, pregunta, expectativa, nota) sin correr nada
+      autotest   el instrumento contra sí mismo: las reglas críticas (eco, protección de datos,
+                 groundedness, check de deriva) con respuestas preparadas a mano
       (sin modo) lo mismo que "bateria"
 
     === Flags ===
@@ -185,6 +192,7 @@ static void Ayuda(string modo, IReadOnlyList<string> flagsDesconocidos)
       dotnet run -- comparar         # la comparativa
       dotnet run -- --solo=Deriva    # sólo el grupo D
       dotnet run -- casos --solo=A   # lista el grupo A, sin correr nada
+      dotnet run -- autotest         # el instrumento medido a sí mismo
       printf '¿cuánto sale Panchos?\n/salir\n' | dotnet run -- explorar
     """);
 }
