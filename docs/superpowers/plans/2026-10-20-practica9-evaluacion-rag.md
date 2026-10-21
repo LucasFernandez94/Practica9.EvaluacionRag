@@ -4,7 +4,7 @@
 
 **Goal:** Construir una consola .NET 8 que corre una batería de ~36 casos contra el sistema de retrieval de la P8 (índice `bc_service_chunks` en `practicas-pg`) y produce métricas de recall, aislamiento, prompt injection, groundedness, robustez y deriva de código.
 
-**Architecture:** La P9 copia los 4 archivos de la P8 en `p8/` con instrumentación **solo en líneas nuevas marcadas `// EVAL`**, de modo que el check de deriva sea una igualdad exacta contra `../Practica8.RagPostgres/`. El retrieval se mide con el `Indice` de la P8 verbatim; la generación con un `Generador` del lado P9 cuyo prompt por defecto se verifica en runtime contra el prompt real que capturó la copia instrumentada. Los casos son declarativos (`Casos.cs`) y los verifica `Verificadores.cs` con reglas deterministas (presencia, pertenencia, reconstrucción, categoría de error) — nunca comparando texto idéntico.
+**Architecture:** La P9 copia los 4 archivos de la P8 en `p8/` con instrumentación **solo en líneas nuevas marcadas `// EVAL`**, de modo que el check de deriva sea una igualdad exacta de las líneas con contenido contra `../Practica8.RagPostgres/`. El retrieval se mide con el `Indice` de la P8 verbatim; la generación con un `Generador` del lado P9 cuyo prompt por defecto se verifica en runtime contra el prompt real que capturó la copia instrumentada. Los casos son declarativos (`Casos.cs`) y los verifica `Verificadores.cs` con reglas deterministas (presencia, pertenencia, reconstrucción, categoría de error) — nunca comparando texto idéntico.
 
 **Tech Stack:** .NET 8, Npgsql 10.0.3, `System.Text.Json`, protocolo crudo contra Ollama (`http://localhost:11434`). Sin librerías LLM, sin xUnit, sin paquetes nuevos.
 
@@ -19,10 +19,10 @@
 - La P9 **mide** el índice `bc_service_chunks` real de la P8. No crea tablas nuevas, no borra filas, no siembra datos. El runner re-sincroniza (idempotente) antes de cada escenario y lo deja escrito en el boletín.
 - **No tocar** `businesscore-postgres` (no instalar pgvector) ni la tabla `rag_chunks` de la P6.
 - Solo parámetros named (`@nombre`), nunca `$1`. Vector: `float[]` sin cast en el insert, `@q::vector` obligatorio en el ranking.
-- **Regla de la copia:** toda línea agregada a un archivo de `p8/` lleva `// EVAL`. Ninguna línea original se modifica. El drift check compara `copia − (líneas // EVAL)` con el original y exige **igualdad exacta**.
+- **Regla de la copia:** toda línea agregada a un archivo de `p8/` lleva `// EVAL` — **incluidas las separadoras, nunca una línea en blanco pelada**. Ninguna línea original se modifica. El drift check compara `copia − (líneas // EVAL) − (líneas en blanco)` con `original − (líneas en blanco)` y exige **igualdad exacta de las líneas con contenido**. El marcador se matchea **exacto**: `//EVAL` o `// eval` NO cuentan y se tratan como líneas no marcadas.
 - Los casos de robustez **no apagan Ollama**: se simulan con un `HttpClient` de base URL a un puerto muerto, un modelo inexistente, un `Guid` de tenant aleatorio y un vector de 4 dims.
 - El pass/fail es **por comportamiento** (presencia, pertenencia, reconstrucción, categoría de error). Nunca por texto idéntico. Las tasas se **reportan**, no se gatean.
-- El drift check busca `../Practica8.RagPostgres/`. Si no está, los casos D se marcan **SKIPPED** con el motivo.
+- El drift check busca `../Practica8.RagPostgres/`. Si no está, los casos D se marcan **SKIPPED** con el motivo. Pero si lo que no se puede resolver es la **raíz de la P9** (falta el `.csproj` o el directorio `p8/`), eso es un **fallo** (exit 1), no un skip: la red no puede evaporarse en silencio.
 - Credenciales solo por env var o `.env`. Ningún valor de password en archivos versionados.
 - No hay proyecto de tests: la verificación es la corrida de la batería + chequeos SQL.
 - Commits en español, prefijo `feat(p9):` / `docs(p9):` / `fix(p9):`.
@@ -137,11 +137,21 @@ public sealed record ResultadoDrift(string Archivo, bool Igual, string Detalle);
 // dejan de significar algo. Este check es la red.
 //
 // La regla de la P9: toda instrumentación es una LÍNEA NUEVA marcada con "// EVAL".
-// Ninguna línea original se modifica. Entonces el check es una IGUALDAD EXACTA:
-//   copia − (líneas con "// EVAL")  ==  original
+// Ninguna línea original se modifica. Entonces el check es una IGUALDAD EXACTA de
+// las líneas CON CONTENIDO:
+//
+//   copia − (líneas "// EVAL") − (líneas en blanco)
+//     ==  original − (líneas en blanco)
+//
+// Las líneas en blanco se ignoran de los dos lados porque no llevan contenido
+// semántico. La única divergencia que eso deja pasar es "alguien borró una línea
+// en blanco del original", que no cambia el comportamiento del código.
+//
+// El marcador se matchea EXACTO: "// EVAL". "//EVAL" o "// eval" NO cuentan y se
+// tratan como líneas NO marcadas (o sea, como contenido que tiene que coincidir).
 public static class Deriva
 {
-    public static readonly string[] Archivos =
+    public static IReadOnlyList<string> Archivos { get; } =
         ["Indice.cs", "BcLectura.cs", "Embeddings.cs", "Asistente.cs"];
 
     // La P8 tiene que estar en la carpeta hermana. Si no está, el check se SKIPEA:
@@ -162,30 +172,45 @@ public static class Deriva
             if (!File.Exists(pathOrig)) { res.Add(new(archivo, false, "no existe el original")); continue; }
             if (!File.Exists(pathCopia)) { res.Add(new(archivo, false, "no existe la copia")); continue; }
 
-            var orig = File.ReadAllLines(pathOrig);
-            var copia = File.ReadAllLines(pathCopia)
-                .Where(l => !l.Contains("// EVAL", StringComparison.Ordinal))
-                .ToArray();
+            var orig = Contenido(File.ReadAllLines(pathOrig), descartarEval: false);
+            var copia = Contenido(File.ReadAllLines(pathCopia), descartarEval: true);
 
-            if (orig.Length == copia.Length && orig.SequenceEqual(copia))
+            if (orig.Count == copia.Count && orig.Select(l => l.Texto).SequenceEqual(copia.Select(l => l.Texto)))
             {
-                res.Add(new(archivo, true, $"{orig.Length} líneas idénticas"));
+                res.Add(new(archivo, true, $"{orig.Count} líneas de contenido idénticas"));
             }
             else
             {
-                var首个 = 0;
-                var max = Math.Min(orig.Length, copia.Length);
-                while (primer < max && orig[primer] == copia[primer]) primer++;
-                var det = $"difieren en la línea {primer + 1}: " +
-                          $"orig=\"{Recorte(orig, primer)}\" copia=\"{Recorte(copia, primer)}\"";
+                var primero = 0;
+                var max = Math.Min(orig.Count, copia.Count);
+                while (primero < max && orig[primero].Texto == copia[primero].Texto) primero++;
+                var num = primero < copia.Count ? copia[primero].Numero
+                         : primero < orig.Count ? orig[primero].Numero
+                         : 0;
+                var det = $"difieren en la línea {num}: " +
+                          $"orig=\"{Recorte(orig, primero)}\" copia=\"{Recorte(copia, primero)}\"";
                 res.Add(new(archivo, false, det));
             }
         }
         return res;
     }
 
-    private static string Recorte(string[] lineas, int i) =>
-        i < lineas.Length ? lineas[i].Trim() : "(fin de archivo)";
+    // Las líneas en blanco no tienen contenido semántico: se ignoran de los dos lados.
+    // Las líneas marcadas "// EVAL" son instrumentación de la P9: sólo se descartan de
+    // la copia (el original de la P8 no puede tenerlas).
+    private static List<Linea> Contenido(string[] lineas, bool descartarEval) =>
+        lineas
+            .Select((texto, i) => new Linea(texto, i + 1))
+            .Where(l => !string.IsNullOrWhiteSpace(l.Texto))
+            .Where(l => !descartarEval || !l.Texto.Contains("// EVAL", StringComparison.Ordinal))
+            .ToList();
+
+    private static string Recorte(List<Linea> lineas, int i) =>
+        i < lineas.Count ? lineas[i].Texto.Trim() : "(fin de archivo)";
+
+    // Numero = la línea FÍSICA del archivo, para que el mensaje apunte a algo real
+    // (el índice dentro del contenido no sirve si hay líneas en blanco en el medio).
+    private readonly record struct Linea(string Texto, int Numero);
 }
 ```
 
@@ -200,10 +225,21 @@ Console.WriteLine("=== Práctica 9 · Batería de evaluación del RAG vectorial 
 
 var raizP9 = AppContext.BaseDirectory;
 // sube hasta encontrar el .csproj (F5 corre desde bin/)
+var raizResuelta = false;
 for (var i = 0; i < 6; i++)
 {
-    if (File.Exists(Path.Combine(raizP9, "Practica9.EvaluacionRag.csproj"))) break;
-    raizP9 = Directory.GetParent(raizP9)?.FullName ?? raizP9;
+    if (File.Exists(Path.Combine(raizP9, "Practica9.EvaluacionRag.csproj"))) { raizResuelta = true; break; }
+    var padre = Directory.GetParent(raizP9)?.FullName;
+    if (padre is null) break;
+    raizP9 = padre;
+}
+
+// Si la raíz no se resolvió, el check no se puede correr: eso NO es un skip de la
+// P8 hermana, es un fallo. Si se deja pasar, la red se evapora en silencio.
+if (!raizResuelta || !Directory.Exists(Path.Combine(raizP9, "p8")))
+{
+    Console.WriteLine("[error] No pude resolver la raíz del proyecto (falta el .csproj o el directorio p8/).");
+    return 1;
 }
 
 var raizP8 = Deriva.RaizP8Desde(raizP9);
@@ -242,6 +278,8 @@ dotnet run; echo "exit=$?"
 ```
 
 Expected: la primera corrida marca `✘ Indice.cs` y sale con exit 1; la segunda vuelve a `4/4` y exit 0. **Si el check NO detecta el cambio, el check está roto y hay que arreglarlo antes de seguir.**
+
+> Con la regla vigente, el `\n` que agrega el `printf` es una línea en blanco y **no** cuenta: lo que dispara el drift es la línea `// un cambio sin marcar`, que es contenido sin marcar. Un `printf '\n'` solo (línea en blanco pelada) tiene que dar `4/4` y exit 0 — si da drift, el check está demasiado estricto y hay que arreglarlo.
 
 - [ ] **Step 8: Commit**
 
@@ -302,7 +340,11 @@ y, justo antes del `return doc!.RootElement...`:
 // EVAL: Editá SOLO con líneas marcadas // EVAL: el check de deriva compara contra el original.
 ```
 
+> **Convención de la instrumentación (obligatoria):** toda línea agregada a un archivo de `p8/` lleva `// EVAL` — **incluidas las separadoras, nunca una línea en blanco pelada** entre bloques instrumentados. Si una separadora hace falta, se escribe `// EVAL` sola.
+>
 > El header tiene que llevar `// EVAL` en **cada** línea: si alguna línea del header no lo lleva, el check de deriva la ve como una diferencia y falla.
+>
+> El marcador se matchea **exacto**: `// EVAL`. `//EVAL` o `// eval` **NO** cuentan y se tratan como líneas no marcadas (o sea, como contenido que tiene que coincidir con el original) → el check falla.
 
 - [ ] **Step 2: Instrumentar `p8/Indice.cs`**
 
@@ -407,7 +449,7 @@ y **después** de la línea `var texto = doc!...";`:
 - [ ] **Step 4: Verificar que el drift check SIGUE dando 0 (la regla funciona)**
 
 Run: `cd "/home/lucas/Documentos/Practicas LLM/Practica9.EvaluacionRag" && dotnet build && dotnet run`
-Expected: `4/4 archivos sin deriva.` — las líneas `// EVAL` se filtran, así que la igualdad exacta se mantiene.
+Expected: `4/4 archivos sin deriva.` — las líneas `// EVAL` se filtran y las líneas en blanco no cuentan, así que la igualdad exacta del contenido se mantiene.
 
 Este es el test crítico de la task: si acá falla, la instrumentación rompió la regla y hay que corregirla antes de seguir.
 
@@ -1508,11 +1550,14 @@ dotnet run -- --rapido
 
 ## La regla de la copia
 
-`p8/` son copias de `Practica8.RagPostgres/`. Toda instrumentación es una **línea nueva marcada `// EVAL`**; ninguna línea original se modifica. Por eso el check de deriva es una **igualdad exacta**:
+`p8/` son copias de `Practica8.RagPostgres/`. Toda instrumentación es una **línea nueva marcada `// EVAL`** (incluidas las separadoras: nunca una línea en blanco pelada); ninguna línea original se modifica. Por eso el check de deriva es una **igualdad exacta de las líneas con contenido**:
 
 ```
-copia − (líneas con "// EVAL")  ==  original
+copia − (líneas con "// EVAL") − (líneas en blanco)
+  ==  original − (líneas en blanco)
 ```
+
+Las líneas en blanco no cuentan porque no llevan contenido semántico. El marcador se matchea exacto: `//EVAL` o `// eval` no cuentan.
 
 Si alguien edita la lógica de la copia sin marcarlo, el caso D falla.
 

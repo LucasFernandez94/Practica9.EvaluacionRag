@@ -66,7 +66,7 @@ Por eso cada caso de retrieval declara **`KValido`**: cuántos resultados son ig
 | **I · Inyección** | el modelo no obedece instrucciones adversarias | igual que A + no filtra el system prompt + no inventa | 6 |
 | **G · Groundedness** | la respuesta se reconstruye desde el contexto | todo precio y todo nombre de la respuesta existe en el contexto | 5 |
 | **B · Robustez** | falla limpio, con mensaje útil | Ollama caído (puerto muerto), modelo inexistente, tenant vacío, dimensión incorrecta | 5 |
-| **D · Deriva** | las copias siguen al original de la P8 | igualdad exacta tras remover las líneas `// EVAL` | 4 |
+| **D · Deriva** | las copias siguen al original de la P8 | igualdad exacta del contenido tras remover las líneas `// EVAL` y las líneas en blanco | 4 |
 
 ### 3.1 Criterios de pass
 
@@ -123,19 +123,26 @@ Practica9.EvaluacionRag/
 
 ### 4.1 La regla de la copia: ninguna línea original se modifica
 
-Toda la instrumentación son **líneas nuevas marcadas con `// EVAL`**. Con esa regla, el check de deriva es una **igualdad exacta**:
+Toda la instrumentación son **líneas nuevas marcadas con `// EVAL`**. Con esa regla, el check de deriva es una **igualdad exacta de las líneas con contenido**:
 
 ```
-copia − (líneas con "// EVAL")  ==  original
+copia − (líneas con "// EVAL") − (líneas en blanco)
+  ==  original − (líneas en blanco)
 ```
 
 No "casi igual": igual. Si alguien edita la lógica de la copia sin marcarlo → D falla. Si edita el original de la P8 → también (la copia queda vieja). Eso paga el costo del copy.
 
+Tres precisiones que hacen que la regla sea aplicable en la práctica:
+
+- **Las líneas en blanco no cuentan**, de los dos lados: no llevan contenido semántico, así que una línea en blanco agregada a la copia no es un falso positivo de drift. Lo único que eso deja pasar es que alguien borre una línea en blanco del original, que no cambia el comportamiento del código.
+- **El marcador se matchea exacto**: `// EVAL`. `//EVAL` o `// eval` **no** cuentan y se tratan como líneas no marcadas (o sea, como contenido que tiene que coincidir con el original).
+- **Toda línea agregada a `p8/` lleva `// EVAL`, incluidas las separadoras**: nunca una línea en blanco pelada entre bloques instrumentados.
+
 Los archivos copiados conservan el namespace `Practica8.RagPostgres` (son las mismas clases) y llevan un header:
 
 ```
-// COPIA de Practica8.RagPostgres/Indice.cs @ 500ecad
-// Editá solo con líneas marcadas // EVAL: el check de deriva compara contra el original.
+// EVAL: COPIA de Practica8.RagPostgres/Indice.cs @ 500ecad.
+// EVAL: Editá SOLO con líneas marcadas // EVAL: el check de deriva compara contra el original.
 ```
 
 ### 4.2 Las 4 medidas de etapa
@@ -183,6 +190,8 @@ La batería mide las dos por separado. Con 6 servicios, el SQL devuelve 6 y el c
 ### 4.5 El check de deriva (grupo D)
 
 Busca `../Practica8.RagPostgres/`. Si no está, los 4 casos D se marcan **SKIPPED** con el motivo (la batería tiene que correr sola). Si está, compara los 4 archivos con la regla de §4.1.
+
+Si lo que no se puede resolver es la **raíz de la P9** (falta el `.csproj` o el directorio `p8/`), eso **no** es un skip: es un **fallo** (exit 1). La diferencia importa: un skip de la P8 hermana es una limitación del entorno, pero una raíz no resuelta significa que el check no se corrió — y un check que no se corrió no puede pasar por verde.
 
 ---
 

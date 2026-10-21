@@ -4,10 +4,21 @@ Console.WriteLine("=== Práctica 9 · Batería de evaluación del RAG vectorial 
 
 var raizP9 = AppContext.BaseDirectory;
 // sube hasta encontrar el .csproj (F5 corre desde bin/)
+var raizResuelta = false;
 for (var i = 0; i < 6; i++)
 {
-    if (File.Exists(Path.Combine(raizP9, "Practica9.EvaluacionRag.csproj"))) break;
-    raizP9 = Directory.GetParent(raizP9)?.FullName ?? raizP9;
+    if (File.Exists(Path.Combine(raizP9, "Practica9.EvaluacionRag.csproj"))) { raizResuelta = true; break; }
+    var padre = Directory.GetParent(raizP9)?.FullName;
+    if (padre is null) break;
+    raizP9 = padre;
+}
+
+// Si la raíz no se resolvió, el check no se puede correr: eso NO es un skip de la
+// P8 hermana, es un fallo. Si se deja pasar, la red se evapora en silencio.
+if (!raizResuelta || !Directory.Exists(Path.Combine(raizP9, "p8")))
+{
+    Console.WriteLine("[error] No pude resolver la raíz del proyecto (falta el .csproj o el directorio p8/).");
+    return 1;
 }
 
 var raizP8 = Deriva.RaizP8Desde(raizP9);
