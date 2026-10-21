@@ -49,7 +49,13 @@ public sealed record CatalogoTenant(
 // El tamaño del catálogo vivo por tenant. Va al boletín: el ground truth se
 // midió contra ESTE catálogo, y el catálogo es un moving target (el de
 // BusinessCore Demo pasó de 6 a 28 servicios durante la práctica).
-public sealed record CatalogReporte(string Tenant, int Servicios);
+//
+// Servicios = el tamaño con el que se midió (al empezar el escenario).
+// ServiciosAlFinal = el tamaño con el que se terminó: el de BC lo modifica un
+// proceso externo (la suite de BusinessCore), así que los dos números se
+// registran para que el boletín diga con qué corpus se midió y con cuál se
+// terminó.
+public sealed record CatalogReporte(string Tenant, int Servicios, int ServiciosAlFinal);
 
 public sealed record Resumen(
     string Escenario, string Modelo, int Total, int Pass, double Tasa,
