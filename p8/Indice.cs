@@ -137,6 +137,7 @@ public sealed class Indice(string connStr)
             cmd.Parameters.AddWithValue("b", businessId);
             total = (int)(long)(await cmd.ExecuteScalarAsync())!;
         }
+        UltimaBusquedaMs = 0; // EVAL: reset de la medición: en el camino sin filas no hay ranking que medir, si no quedaría el valor del caso anterior
         if (total == 0) return [];                      // fail-closed: sin filas no hay respuesta
 
         // maximo <= 0 daría LIMIT 0 → lista vacía → un "No tengo esa información."
