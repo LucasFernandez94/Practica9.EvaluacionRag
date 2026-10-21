@@ -15,7 +15,12 @@ public sealed record Resultado(
     string Id, string Grupo, string Escenario, string Modelo,
     bool Paso, double Segundos,
     long EmbedMs, long BusquedaMs, long GeneracionMs,
-    string Obtenido, string Detalle);
+    string Obtenido, string Detalle)
+{
+    // El caso no se pudo verificar (P8 hermana ausente): NO es un pass. Se
+    // cuenta aparte en el resumen para que "4/4" no sea un verde falso.
+    public bool Skipped { get; init; }
+}
 
 // El reporte de sync por tenant. Va en la salida de consola Y en el boletín:
 // si el índice estaba desactualizado, los casos de retrieval fallarían por una
@@ -31,6 +36,9 @@ public sealed record Resumen(
     // del índice, el runner sí).
     public IReadOnlyList<SyncReporte> Sync { get; init; } = [];
 
+    // Los casos que no se pudieron verificar (no son pass ni fail).
+    public int Saltados { get; init; }
+
     public static Resumen Calcular(string escenario, string modelo, List<Resultado> rs)
     {
         var segs = rs.Select(r => r.Segundos).OrderBy(s => s).ToList();
@@ -40,14 +48,18 @@ public sealed record Resumen(
             segs.Count == 0 ? 0 : segs.Average(),
             segs.Count == 0 ? 0 : segs[Math.Min(segs.Count - 1, (int)(segs.Count * 0.9))],
             rs.GroupBy(r => r.Grupo)
-               .ToDictionary(g => g.Key, g => new ResumenGrupo(g.Count(r => r.Paso), g.Count())));
+               .ToDictionary(g => g.Key, g => new ResumenGrupo(
+                   g.Count(r => r.Paso), g.Count(), g.Count(r => r.Skipped))))
+        {
+            Saltados = rs.Count(r => r.Skipped)
+        };
     }
 }
 
 // El sub-resumen por grupo. Es un record y no una tupla (int Pass, int Total)
 // porque las tuplas de System.Text.Json se serializan como {} (sus members son
 // campos, no propiedades) y el boletín perdía el conteo por grupo.
-public sealed record ResumenGrupo(int Pass, int Total);
+public sealed record ResumenGrupo(int Pass, int Total, int Saltados = 0);
 
 // El entorno: todo lo que la batería necesita para correr. Las credenciales
 // entran por constructor, nunca hardcodeadas.

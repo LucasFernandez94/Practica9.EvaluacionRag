@@ -68,16 +68,36 @@ public static class Runner
             var r = new Resultado(caso.Id, caso.Grupo, esc.Nombre, esc.Modelo,
                 veredicto.Paso, sw.Elapsed.TotalSeconds,
                 corrida.EmbedMs, corrida.BusquedaMs, corrida.GeneracionMs,
-                Recorte(corrida.Respuesta), veredicto.Detalle);
+                Recorte(corrida.Respuesta), veredicto.Detalle)
+            { Skipped = veredicto.Skipped };
             resultados.Add(r);
-            Console.WriteLine($"  {r.Id,-4} {r.Grupo,-12} {(r.Paso ? "✔" : "✘")} {r.Segundos,5:F1}s  {r.Detalle}");
+            Console.WriteLine($"  {r.Id,-4} {r.Grupo,-12} {(r.Paso ? "✔" : (r.Skipped ? "-" : "✘"))} {r.Segundos,5:F1}s  {r.Detalle}");
         }
 
         var resumen = Resumen.Calcular(esc.Nombre, esc.Modelo, resultados) with { Sync = sync };
         Console.WriteLine($"\n  → {resumen.Pass}/{resumen.Total} ({resumen.Tasa:P0}) · prom {resumen.SegPromedio:F1}s · p90 {resumen.SegP90:F1}s");
         foreach (var g in resumen.PorGrupo.OrderBy(g => g.Key))
-            Console.WriteLine($"    {g.Key,-12}: {g.Value.Pass}/{g.Value.Total}");
+        {
+            var saltados = g.Value.Saltados > 0 ? $" ({g.Value.Saltados} saltados)" : "";
+            Console.WriteLine($"    {g.Key,-12}: {g.Value.Pass}/{g.Value.Total}{saltados}");
+        }
 
+        // Los fallos y los saltados, explícitos: un operador no debería tener
+        // que leer los 36 renglones para saber qué pasó.
+        var fallos = resultados.Where(r => !r.Paso && !r.Skipped).ToList();
+        if (fallos.Count > 0)
+        {
+            Console.WriteLine("\n  FALLOS:");
+            foreach (var f in fallos)
+                Console.WriteLine($"    {f.Id,-4} · {f.Grupo,-12}: {f.Detalle}");
+        }
+        var casosSaltados = resultados.Where(r => r.Skipped).ToList();
+        if (casosSaltados.Count > 0)
+        {
+            Console.WriteLine("\n  SALTADOS (no se pudieron verificar):");
+            foreach (var s in casosSaltados)
+                Console.WriteLine($"    {s.Id,-4} · {s.Grupo,-12}: {s.Detalle}");
+        }
         Escribir(resultados, resumen, salidaBase, esc);
         return resumen;
     }
@@ -143,6 +163,11 @@ public static class Runner
 
         var tenantId = mapa[caso.Tenant];
 
+        // La perilla de k se setea ANTES de cualquier búsqueda: el Asistente de
+        // la P8 (usado en B1/B2) también recupera, y no puede heredar el k de
+        // un caso anterior.
+        indice.ForzarK = esc.ForzarK;
+
         // B1: Ollama caído → base URL a un puerto sin servicio. Mismo path de error
         // que apagarlo, sin tocar el entorno.
         // B5: un server falso que devuelve {"embeddings":[]} → el guard del cliente
@@ -207,16 +232,27 @@ public static class Runner
 
         // B1 y B2: el error tiene que aparecer en la generación (que es lo que
         // llama a Ollama con el modelo).
+        //
+        // El caso mide el PATH DE ERROR DE LA P8, así que la llamada va por el
+        // Asistente de p8/ (no por el Generador de la P9): el Asistente es
+        // quien envuelve los fallos de Ollama en "No pude hablar con Ollama.
+        // ¿Está corriendo? ¿Tenés el modelo? ollama pull X", que es
+        // justamente lo que los casos B1 y B2 dicen medir. El wrapper no
+        // cambia el inner exception, así que la clasificación por la cadena
+        // (socket → conexión, 404 → modelo) sigue viendo el error real.
         if (caso.ExigeError is "conexion" or "modelo")
         {
             try
             {
-                var (r, _) = await generador.GenerarAsync(http, modelo, caso.Tenant, ["contexto"], caso.Pregunta);
-                return new Corrida(r, [], null, null, 0, 0, 0, null);
+                var asistente = new Asistente(http, indice, emb, modelo);
+                var (r, _) = await asistente.PreguntarAsync(tenantId, caso.Tenant, caso.Pregunta);
+                return new Corrida(r, [], null, null,
+                    emb.UltimoEmbedMs, indice.UltimaBusquedaMs, asistente.UltimaGeneracionMs, asistente.UltimoPrompt);
             }
             catch (Exception ex)
             {
-                return new Corrida("", [], ex.Message, ClasificarError(ex), 0, 0, 0, null);
+                return new Corrida("", [], ex.Message, ClasificarError(ex),
+                    emb.UltimoEmbedMs, indice.UltimaBusquedaMs, 0, null);
             }
         }
 
@@ -224,7 +260,6 @@ public static class Runner
         var q2 = await emb.EmbedConsultaAsync(caso.Pregunta);
         var q2ms = emb.UltimoEmbedMs;
 
-        indice.ForzarK = esc.ForzarK;
         var hits2 = await indice.BuscarAsync(tenantId, q2);
         // ÍNDICE: UltimaBusquedaMs mide SÓLO el SELECT de ranking (el ORDER BY
         // con <=> y el LIMIT): NO el count(*) previo ni la apertura de la
@@ -328,12 +363,13 @@ public static class Runner
         var actualizados = resumen.Sync.Sum(s => s.Actualizados);
         var borrados = resumen.Sync.Sum(s => s.Borrados);
         var csv = "id,grupo,escenario,modelo,paso,segundos,embed_ms,busqueda_ms,generacion_ms,obtenido,detalle," +
-                  "sync_nuevos,sync_actualizados,sync_borrados\n" +
+                  "saltado,sync_nuevos,sync_actualizados,sync_borrados\n" +
             string.Join("\n", rs.Select(r => string.Join(",",
                 r.Id, r.Grupo, r.Escenario, r.Modelo, r.Paso ? 1 : 0,
                 r.Segundos.ToString("F2", CultureInfo.InvariantCulture),
                 r.EmbedMs, r.BusquedaMs, r.GeneracionMs,
                 $"\"{Csv(r.Obtenido)}\"", $"\"{Csv(r.Detalle)}\"",
+                r.Skipped ? 1 : 0,
                 nuevos, actualizados, borrados)));
         File.WriteAllText($"{salidaBase}-{esc.Nombre}.csv", csv);
     }

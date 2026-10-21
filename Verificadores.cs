@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace Practica9.EvaluacionRag;
 
-public sealed record Veredicto(bool Paso, string Detalle);
+public sealed record Veredicto(bool Paso, string Detalle, bool Skipped = false);
 
 // El contexto de la deriva: lo necesita el grupo D.
 public sealed record DerivaContext(IReadOnlyList<ResultadoDrift> Filas, bool Disponible);
@@ -16,6 +16,16 @@ public static class Verificadores
     public static Veredicto Verificar(Caso c, Corrida corrida, DerivaContext? deriva)
     {
         if (c.Grupo == "Deriva") return VerificarDeriva(c, deriva);
+
+        // Una excepción inesperada NO es un PASS. Si el runner se cae a mitad
+        // de caso (Ollama que se apaga, timeout, Postgres caído), la corrida
+        // tiene que decir "falló", no "ok": sin esta regla, una corrida
+        // interrumpida reportaría una tasa inflada.
+        // Ojo: los casos que ESPERAN un error (B1, B2, B4, B5) siguen su
+        // camino: los maneja VerificarError.
+        if (c.ExigeError is null && corrida.Error is not null)
+            return new(false, $"el caso tiró una excepción: {Recorte(corrida.Error)}");
+
         if (c.ExigeError is not null) return VerificarError(c, corrida);
 
         // (a) PERTENENCIA AL TENANT: la garantía central del grupo A. Todo hit
@@ -150,8 +160,10 @@ public static class Verificadores
 
     private static Veredicto VerificarDeriva(Caso c, DerivaContext? deriva)
     {
+        // Sin la P8 hermana el caso NO se puede verificar: no es un pass (se
+        // cuenta como saltado y se informa aparte), no un fail.
         if (deriva is null || !deriva.Disponible)
-            return new(true, "SKIPPED: no se encontró ../Practica8.RagPostgres");
+            return new(false, "SKIPPED: no se encontró ../Practica8.RagPostgres", true);
         var idx = c.Id switch
         {
             "D1" => 0, "D2" => 1, "D3" => 2, "D4" => 3, _ => -1
