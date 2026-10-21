@@ -1885,6 +1885,11 @@ dotnet run -- --solo=Retrieval
 dotnet run -- --rapido
 ```
 
+> Las corridas **parciales** (`--rapido` o `--solo=<grupo>`) escriben en
+> `resultados-parcial*`: nunca pisan los boletines completos (`resultados-*.csv`),
+> que son el boletín de la práctica. La corrida completa (sin flags) sigue
+> escribiendo en `resultados-`.
+
 ## La regla de la copia
 
 `p8/` son copias de `Practica8.RagPostgres/`. Toda instrumentación es una **línea nueva marcada `// EVAL`** (incluidas las separadoras: nunca una línea en blanco pelada); ninguna línea original se modifica. Por eso el check de deriva es una **igualdad exacta de las líneas con contenido**:

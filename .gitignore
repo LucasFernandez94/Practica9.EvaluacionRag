@@ -2,3 +2,8 @@
 bin/
 obj/
 .superpowers/
+
+# Los boletines PARCIALES (--rapido / --solo=<grupo>) son desechables: no son
+# el boletín de la práctica y no se commitean (el plan de la Task 7 hace
+# "git add -A", así que sin esto un parcial se colaría en el commit).
+resultados-parcial*

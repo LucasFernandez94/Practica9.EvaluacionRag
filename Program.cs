@@ -38,6 +38,15 @@ var rapido = args.Contains("--rapido", StringComparer.OrdinalIgnoreCase);
 var solo = args.FirstOrDefault(a => a.StartsWith("--solo=", StringComparison.Ordinal))?.Split('=', 2)[1];
 var casos = solo is not null ? Casos.PorGrupo(solo) : (rapido ? Casos.Rapido : Casos.Todos);
 
+// Una corrida PARCIAL (--rapido o --solo=<grupo>) escribe en OTRA base: los
+// boletines completos (resultados-*.csv/.json) son el entregable de la
+// práctica, y una corrida parcial no puede pisarlos con otros totales
+// (29 casos en vez de 36, o 6) sin que nadie se entere. La corrida completa
+// (sin flags) sigue escribiendo en "resultados-" como siempre.
+var parcial = rapido || solo is not null;
+var salidaBase = parcial ? "resultados-parcial" : "resultados";
+Console.WriteLine($"  {(parcial ? "corrida parcial" : "corrida completa")} · escritura: {salidaBase}*");
+
 // La deriva: si la P8 hermana no está, se SKIPEA (la batería tiene que poder
 // correr sola) y los casos D quedan marcados SKIPPED. Si la P8 está pero las
 // copias derivaron, los números no son de fiar: se corta.
@@ -91,10 +100,10 @@ try
     switch (modo)
     {
         case "comparar":
-            await Comparativa.CorrerTodo(casos, env, "resultados");
+            await Comparativa.CorrerTodo(casos, env, salidaBase);
             break;
         default:
-            var r = await Runner.CorrerAsync(casos, escenario, env, "resultados");
+            var r = await Runner.CorrerAsync(casos, escenario, env, salidaBase);
             Console.WriteLine($"\nResumen: {r.Pass}/{r.Total} ({r.Tasa:P0})");
             break;
     }
