@@ -147,6 +147,7 @@ public static class Explorador
         var corrida = new Corrida(respuesta, hits, null, null, embedMs, rankMs, genMs, asistente.UltimoPrompt)
         {
             Contexto = contexto,
+            RetrievalMs = retrievalMs,
             HitsAjenos = await Runner.HitsAjenosAsync(env.ConnStrPg, tenantId, hits)
         };
 

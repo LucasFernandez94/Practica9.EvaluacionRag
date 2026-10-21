@@ -37,10 +37,18 @@ public static class Comparativa
     public static void Escribir(IReadOnlyList<Resumen> resúmenes, string salidaBase)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("escenario,modelo,grupo,pass,total,tasa,seg_promedio,seg_p90,casos_no_info,frases_exactas,tasa_frase_exacta");
+        // Los p50/p95 por etapa (spec §5.2): embed, retrieval (el SQL completo),
+        // rank (el SELECT solo) y generación. Son por ESCENARIO (el mismo
+        // reloj para todos los grupos): la fila es (escenario × grupo).
+        sb.AppendLine("escenario,modelo,grupo,pass,total,tasa,seg_promedio,seg_p90,casos_no_info,frases_exactas,tasa_frase_exacta," +
+                      "embed_p50,embed_p95,retrieval_p50,retrieval_p95,rank_p50,rank_p95,gen_p50,gen_p95");
         foreach (var r in resúmenes)
         {
             if (r.PorGrupo.Count == 0) continue;
+            var embed = r.Etapa("embed");
+            var retrieval = r.Etapa("retrieval");
+            var rank = r.Etapa("rank");
+            var gen = r.Etapa("generacion");
             foreach (var g in r.PorGrupo.OrderBy(g => g.Key))
                 sb.AppendLine(string.Join(",",
                     r.Escenario, r.Modelo, g.Key, g.Value.Pass, g.Value.Total,
@@ -48,7 +56,11 @@ public static class Comparativa
                     r.SegPromedio.ToString("F2", CultureInfo.InvariantCulture),
                     r.SegP90.ToString("F2", CultureInfo.InvariantCulture),
                     g.Value.CasosNoInfo, g.Value.FrasesExactas,
-                    g.Value.CasosNoInfo == 0 ? "" : ((double)g.Value.FrasesExactas / g.Value.CasosNoInfo).ToString("F3", CultureInfo.InvariantCulture)));
+                    g.Value.CasosNoInfo == 0 ? "" : ((double)g.Value.FrasesExactas / g.Value.CasosNoInfo).ToString("F3", CultureInfo.InvariantCulture),
+                    embed?.P50 ?? 0, embed?.P95 ?? 0,
+                    retrieval?.P50 ?? 0, retrieval?.P95 ?? 0,
+                    rank?.P50 ?? 0, rank?.P95 ?? 0,
+                    gen?.P50 ?? 0, gen?.P95 ?? 0));
         }
         File.WriteAllText($"{salidaBase}-comparativa.csv", sb.ToString());
 
@@ -63,5 +75,22 @@ public static class Comparativa
         }
         Console.WriteLine("\n  exactas = casos que respondieron con la frase LITERAL del prompt");
         Console.WriteLine("  (\"No tengo esa información.\"), de los que piden fail-closed. No es un pass/fail.");
+
+        // Las etapas por escenario: p50/p95 de embed, retrieval, rank y
+        // generación (spec §5.2).
+        Console.WriteLine("\n  etapas (p50/p95 ms) por escenario:");
+        Console.WriteLine($"  {"escenario",-22} {"embed",-10} {"retrieval",-10} {"rank",-10} {"generacion",-10}");
+        foreach (var r in resúmenes)
+        {
+            if (r.Etapas.Count == 0) continue;
+            var celda = (string nombre) =>
+            {
+                var e = r.Etapa(nombre);
+                return e is null ? "n/a" : $"{e.P50}/{e.P95}";
+            };
+            Console.WriteLine($"  {r.Escenario,-22} {celda("embed"),-10} {celda("retrieval"),-10} " +
+                              $"{celda("rank"),-10} {celda("generacion"),-10}");
+        }
+        Console.WriteLine("  retrieval = conexión + count(*) + ranking · rank = sólo el SELECT de ranking");
     }
 }

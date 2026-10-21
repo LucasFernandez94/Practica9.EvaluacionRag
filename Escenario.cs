@@ -22,6 +22,15 @@ public sealed record Resultado(
     // cuenta aparte en el resumen para que "4/4" no sea un verde falso.
     public bool Skipped { get; init; }
 
+    // El retrieval COMPLETO (apertura de conexión + count(*) + ranking), medido
+    // por el runner con un cronómetro propio alrededor de la búsqueda.
+    //
+    // Es la columna que faltaba: BusquedaMs mide SÓLO el SELECT de ranking
+    // (que es sub-milisegundo y por eso lee ~0), así que sin esta columna el
+    // costo de SQL no estaba en ninguna parte y "SQL ≈ 0 ms" era una afirmación
+    // sobre dónde estaba el cronómetro, no sobre el sistema.
+    public long RetrievalMs { get; init; }
+
     // El contrato LITERAL del prompt: el modelo respondió exactamente con
     // "No tengo esa información.". Sólo tiene sentido en los casos que declaran
     // ExigeNoInfo (en el resto es null). NO es un pass/fail: el pass lo decide
@@ -78,6 +87,14 @@ public sealed record Resumen(
     [JsonPropertyName("casos_no_info")] public int CasosNoInfo { get; init; }
     [JsonPropertyName("frases_exactas")] public int FrasesExactas { get; init; }
 
+    // Los p50/p95 por etapa (spec §5.2): embed, retrieval (el SQL completo),
+    // rank (el SELECT de ranking solo) y generación. Es la respuesta a "¿cuánto
+    // es embedding, cuánto es SQL y cuánto es el modelo?".
+    public IReadOnlyList<EtapaResumen> Etapas { get; init; } = [];
+
+    public EtapaResumen? Etapa(string nombre) =>
+        Etapas.FirstOrDefault(e => e.Etapa == nombre);
+
     public static Resumen Calcular(string escenario, string modelo, List<Resultado> rs)
     {
         var segs = rs.Select(r => r.Segundos).OrderBy(s => s).ToList();
@@ -96,10 +113,44 @@ public sealed record Resumen(
         {
             Saltados = rs.Count(r => r.Skipped),
             CasosNoInfo = rs.Count(r => r.FraseExacta is not null),
-            FrasesExactas = rs.Count(r => r.FraseExacta == true)
+            FrasesExactas = rs.Count(r => r.FraseExacta == true),
+            Etapas = EtapasDe(rs)
         };
     }
+
+    // Los p50/p95 por etapa. Los percentiles se calculan sobre TODOS los casos
+    // del escenario (los que no hicieron esa etapa valen 0): el rank es
+    // sub-milisegundo, así que un 0 ahí es una MEDICIÓN, no un "no corrió".
+    // El índice es el mismo que usa el p90 del total (percentil por rango,
+    // sobre la lista ordenada).
+    private static IReadOnlyList<EtapaResumen> EtapasDe(List<Resultado> rs)
+    {
+        var etapas = new (string Nombre, Func<Resultado, long> Valor)[]
+        {
+            ("embed", r => r.EmbedMs),
+            ("retrieval", r => r.RetrievalMs),
+            ("rank", r => r.BusquedaMs),
+            ("generacion", r => r.GeneracionMs),
+        };
+        return etapas.Select(e =>
+        {
+            var vals = rs.Select(e.Valor).OrderBy(v => v).ToList();
+            return new EtapaResumen(e.Nombre, Percentil(vals, 0.5), Percentil(vals, 0.95), vals.Count);
+        }).ToList();
+    }
+
+    private static long Percentil(List<long> ordenados, double q)
+    {
+        if (ordenados.Count == 0) return 0;
+        var i = (int)(ordenados.Count * q);
+        if (i >= ordenados.Count) i = ordenados.Count - 1;
+        if (i < 0) i = 0;
+        return ordenados[i];
+    }
 }
+
+// El resumen de UNA etapa: el p50 y el p95 (en ms) y cuántas muestras hay.
+public sealed record EtapaResumen(string Etapa, long P50, long P95, int Muestras);
 
 // El sub-resumen por grupo. Es un record y no una tupla (int Pass, int Total)
 // porque las tuplas de System.Text.Json se serializan como {} (sus members son
@@ -157,4 +208,9 @@ public sealed record Corrida(
     // el runner con una consulta a la DB (nunca parseando el texto del chunk):
     // es la garantía central del grupo A.
     public IReadOnlyList<Guid> HitsAjenos { get; init; } = [];
+
+    // El retrieval COMPLETO (conexión + count(*) + ranking), medido por el
+    // runner con su propio cronómetro. Distinto de BusquedaMs, que mide SÓLO
+    // el SELECT de ranking (y por eso lee ~0: es sub-milisegundo).
+    public long RetrievalMs { get; init; }
 }

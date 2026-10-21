@@ -90,7 +90,7 @@ public static class Runner
                 veredicto.Paso, sw.Elapsed.TotalSeconds,
                 corrida.EmbedMs, corrida.BusquedaMs, corrida.GeneracionMs,
                 Recorte(corrida.Respuesta), veredicto.Detalle)
-            { Skipped = veredicto.Skipped, FraseExacta = veredicto.FraseExacta };
+            { Skipped = veredicto.Skipped, FraseExacta = veredicto.FraseExacta, RetrievalMs = corrida.RetrievalMs };
             resultados.Add(r);
             Console.WriteLine($"  {r.Id,-4} {r.Grupo,-12} {(r.Paso ? "✔" : (r.Skipped ? "-" : "✘"))} {r.Segundos,5:F1}s  {r.Detalle}");
         }
@@ -119,6 +119,9 @@ public static class Runner
                                   $"{c.ServiciosAlFinal} al terminar (cambió durante la corrida)");
         }
         Console.WriteLine($"\n  → {resumen.Pass}/{resumen.Total} ({resumen.Tasa:P0}) · prom {resumen.SegPromedio:F1}s · p90 {resumen.SegP90:F1}s");
+        // Las etapas (spec §5.2): p50/p95 de embed, retrieval, rank y generación.
+        Console.WriteLine("    etapas (p50/p95 ms): " +
+            string.Join(" · ", resumen.Etapas.Select(e => $"{e.Etapa} {e.P50}/{e.P95}")));
         foreach (var g in resumen.PorGrupo.OrderBy(g => g.Key))
         {
             var saltados = g.Value.Saltados > 0 ? $" ({g.Value.Saltados} saltados)" : "";
@@ -427,11 +430,13 @@ public static class Runner
         {
             var aleatorio = Guid.NewGuid();
             var q = await emb.EmbedConsultaAsync(caso.Pregunta);
+            var swR = Stopwatch.StartNew();
             var hits = await indice.BuscarAsync(aleatorio, q);
+            swR.Stop();
             var texto = hits.Count == 0 ? "No tengo esa información." : "hits inesperados";
             return new Corrida(texto, hits, null, null,
                 emb.UltimoEmbedMs, indice.UltimaBusquedaMs, 0, null)
-            { RespuestaSintetica = true };
+            { RetrievalMs = swR.ElapsedMilliseconds, RespuestaSintetica = true };
         }
 
         // B5: el guard del cliente (vectores.Count != 1) tiene que disparar.
@@ -480,7 +485,8 @@ public static class Runner
                 var asistente = new Asistente(http, indice, emb, modelo);
                 var (r, _) = await asistente.PreguntarAsync(tenantId, caso.Tenant, caso.Pregunta);
                 return new Corrida(r, [], null, null,
-                    emb.UltimoEmbedMs, indice.UltimaBusquedaMs, asistente.UltimaGeneracionMs, asistente.UltimoPrompt);
+                    emb.UltimoEmbedMs, indice.UltimaBusquedaMs, asistente.UltimaGeneracionMs, asistente.UltimoPrompt)
+                { RetrievalMs = asistente.UltimaBusquedaMs };
             }
             catch (Exception ex)
             {
@@ -493,12 +499,14 @@ public static class Runner
         var q2 = await emb.EmbedConsultaAsync(caso.Pregunta);
         var q2ms = emb.UltimoEmbedMs;
 
+        // El retrieval COMPLETO: conexión + count(*) + ranking, medido con un
+        // cronómetro PROPIO del runner (el de la copia mide sólo el SELECT de
+        // ranking). Con las dos columnas se ve dónde se va el tiempo: el rank
+        // es sub-milisegundo, pero abrir la conexión y contar no lo son.
+        var swRetrieval = Stopwatch.StartNew();
         var hits2 = await indice.BuscarAsync(tenantId, q2);
-        // ÍNDICE: UltimaBusquedaMs mide SÓLO el SELECT de ranking (el ORDER BY
-        // con <=> y el LIMIT): NO el count(*) previo ni la apertura de la
-        // conexión. El retrieval COMPLETO (conexión + count + ranking) lo mide
-        // Asistente.UltimaBusquedaMs, que no aplica acá porque el runner usa
-        // el Generador, no el Asistente.
+        swRetrieval.Stop();
+        var retrievalMs = swRetrieval.ElapsedMilliseconds;
         var busquedaMs = indice.UltimaBusquedaMs;
 
         // La pertenencia al tenant: cada service_id del hit tiene que ser del
@@ -507,7 +515,7 @@ public static class Runner
 
         if (hits2.Count == 0)
             return new Corrida("No tengo esa información.", [], null, null, q2ms, busquedaMs, 0, null)
-            { HitsAjenos = ajenos, RespuestaSintetica = true };
+            { HitsAjenos = ajenos, RespuestaSintetica = true, RetrievalMs = retrievalMs };
 
         // El contexto que se le manda al modelo: los chunks recuperados, con
         // la perilla de k recortando lo que llega. Los ids viajan con los
@@ -518,6 +526,7 @@ public static class Runner
         var (respuesta, prompt) = await generador.GenerarAsync(http, modelo, caso.Tenant, contexto, caso.Pregunta);
         return new Corrida(respuesta, hits2, null, null, q2ms, busquedaMs, generador.UltimaGeneracionMs, prompt)
         {
+            RetrievalMs = retrievalMs,
             Contexto = contexto,
             ContextoIds = recorte.Select(h => h.ServiceId).ToList(),
             HitsAjenos = ajenos
@@ -605,12 +614,14 @@ public static class Runner
         var nuevos = resumen.Sync.Sum(s => s.Nuevos);
         var actualizados = resumen.Sync.Sum(s => s.Actualizados);
         var borrados = resumen.Sync.Sum(s => s.Borrados);
-        var csv = "id,grupo,escenario,modelo,paso,segundos,embed_ms,busqueda_ms,generacion_ms,obtenido,detalle," +
+        // retrieval_ms: el retrieval COMPLETO (conexión + count + rank).
+        // busqueda_ms: el SELECT de ranking solo (sub-milisegundo: lee ~0).
+        var csv = "id,grupo,escenario,modelo,paso,segundos,embed_ms,retrieval_ms,busqueda_ms,generacion_ms,obtenido,detalle," +
                   "saltado,frase_exacta,sync_nuevos,sync_actualizados,sync_borrados\n" +
             string.Join("\n", rs.Select(r => string.Join(",",
                 r.Id, r.Grupo, r.Escenario, r.Modelo, r.Paso ? 1 : 0,
                 r.Segundos.ToString("F2", CultureInfo.InvariantCulture),
-                r.EmbedMs, r.BusquedaMs, r.GeneracionMs,
+                r.EmbedMs, r.RetrievalMs, r.BusquedaMs, r.GeneracionMs,
                 $"\"{Csv(r.Obtenido)}\"", $"\"{Csv(r.Detalle)}\"",
                 r.Skipped ? 1 : 0,
                 r.FraseExacta is null ? "" : (r.FraseExacta.Value ? 1 : 0),
