@@ -292,7 +292,10 @@ public static class Runner
     // Los hits que NO son del tenant pedido. Se consulta la tabla del índice por
     // service_id (el id real del chunk), así que la pertenencia se decide con
     // el dato, no con el texto del chunk.
-    private static async Task<IReadOnlyList<Guid>> HitsAjenosAsync(
+    // PUBLIC: el explorador la usa también (misma regla de pertenencia, no
+    // duplicada): sin el service_id no se puede preguntar a la DB de qué
+    // negocio es cada chunk.
+    public static async Task<IReadOnlyList<Guid>> HitsAjenosAsync(
         string connStr, Guid businessId, IReadOnlyList<Indice.Hit> hits)
     {
         if (hits.Count == 0) return [];

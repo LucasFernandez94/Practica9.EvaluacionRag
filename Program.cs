@@ -30,13 +30,37 @@ if (bcPass is null || pgPass is null)
     return 1;
 }
 
-// El modo: por defecto la batería (un solo escenario). "comparar" corre los 3
-// escenarios de la comparativa. Los flags --solo=<grupo> y --rapido eligen
-// qué casos se corren.
-var modo = args.FirstOrDefault() ?? "bateria";
+// El MODO es el primer argumento que NO empieza con "--": los que empiezan
+// con "--" son flags (--rapido, --solo=<grupo>). Antes se tomaba el primer
+// argumento y "dotnet run -- --rapido comparar" corría la batería en vez de
+// la comparativa.
+var modo = args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal))?.ToLowerInvariant() ?? "bateria";
 var rapido = args.Contains("--rapido", StringComparer.OrdinalIgnoreCase);
 var solo = args.FirstOrDefault(a => a.StartsWith("--solo=", StringComparison.Ordinal))?.Split('=', 2)[1];
+var flagsDesconocidos = args
+    .Where(a => a.StartsWith("--", StringComparison.Ordinal)
+             && !string.Equals(a, "--rapido", StringComparison.OrdinalIgnoreCase)
+             && !a.StartsWith("--solo=", StringComparison.Ordinal))
+    .ToList();
+
+// Un modo o un flag desconocido NO dispara una corrida de 15 minutos: se
+// muestra la ayuda y se sale. ("dotnet run -- --comparar" no es un modo:
+// comparar no lleva guiones.)
+if (modo is not ("bateria" or "comparar" or "explorar" or "casos") || flagsDesconocidos.Count > 0)
+{
+    Ayuda(modo, flagsDesconocidos);
+    return 0;
+}
+
+// Los casos: --solo=<grupo> gana sobre --rapido.
 var casos = solo is not null ? Casos.PorGrupo(solo) : (rapido ? Casos.Rapido : Casos.Todos);
+if (casos.Count == 0)
+{
+    Console.WriteLine($"[error] El grupo \"{solo}\" no existe. " +
+                      "Grupos: R, A, I, G, B, D (o el nombre completo: Retrieval, Aislamiento, " +
+                      "Inyección, Groundedness, Robustez, Deriva).");
+    return 1;
+}
 
 // Una corrida PARCIAL (--rapido o --solo=<grupo>) escribe en OTRA base: los
 // boletines completos (resultados-*.csv/.json) son el entregable de la
@@ -45,7 +69,6 @@ var casos = solo is not null ? Casos.PorGrupo(solo) : (rapido ? Casos.Rapido : C
 // (sin flags) sigue escribiendo en "resultados-" como siempre.
 var parcial = rapido || solo is not null;
 var salidaBase = parcial ? "resultados-parcial" : "resultados";
-Console.WriteLine($"  {(parcial ? "corrida parcial" : "corrida completa")} · escritura: {salidaBase}*");
 
 // La deriva: si la P8 hermana no está, se SKIPEA (la batería tiene que poder
 // correr sola) y los casos D quedan marcados SKIPPED. Si la P8 está pero las
@@ -100,11 +123,25 @@ try
     switch (modo)
     {
         case "comparar":
+            Console.WriteLine($"  {(parcial ? "corrida parcial" : "corrida completa")} · escritura: {salidaBase}*");
             await Comparativa.CorrerTodo(casos, env, salidaBase);
             break;
-        default:
+        case "explorar":
+            await Explorador.RunAsync(env);
+            break;
+        case "casos":
+            ListarCasos(casos);
+            break;
+        case "bateria":
+            Console.WriteLine($"  {(parcial ? "corrida parcial" : "corrida completa")} · escritura: {salidaBase}*");
             var r = await Runner.CorrerAsync(casos, escenario, env, salidaBase);
             Console.WriteLine($"\nResumen: {r.Pass}/{r.Total} ({r.Tasa:P0})");
+            break;
+        default:
+            // Cinturón y tirantes: la validación de arriba ya cortó los modos
+            // desconocidos, pero si algo se colara, se muestra la ayuda en vez
+            // de correr los 36 casos en silencio.
+            Ayuda(modo, flagsDesconocidos);
             break;
     }
 }
@@ -115,10 +152,60 @@ catch (FidelidadDelPromptException ex)
 }
 catch (Exception ex)
 {
-    Console.WriteLine($"[error] La batería no pudo correr: {ex.Message}");
+    Console.WriteLine($"[error] No pudo correr: {ex.Message}");
     return 1;
 }
 return 0;
+
+// La ayuda: los modos válidos y cómo usarlos. Se muestra cuando el modo o
+// un flag no se entienden (y en vez de correr la batería a ciegas).
+static void Ayuda(string modo, IReadOnlyList<string> flagsDesconocidos)
+{
+    if (modo is not ("bateria" or "comparar" or "explorar" or "casos"))
+        Console.WriteLine($"[error] Modo desconocido: \"{modo}\".");
+    foreach (var f in flagsDesconocidos)
+        Console.WriteLine($"[error] Flag desconocido: \"{f}\" (los modos no llevan guiones: \"{f.TrimStart('-')}\").");
+
+    Console.WriteLine("""
+
+    === Modos ===
+      bateria    la batería: 36 casos, un escenario → resultados-base.csv/.json
+      comparar   los 7 escenarios de la comparativa → resultados-<escenario>.csv/.json
+      explorar   el chat de diagnóstico: pregunta → embedding, top-k, respuesta y veredicto
+      casos      lista la batería (id, grupo, tenant, pregunta, expectativa, nota) sin correr nada
+      (sin modo) lo mismo que "bateria"
+
+    === Flags ===
+      --solo=<grupo>  sólo ese grupo (R, A, I, G, B, D o el nombre completo) → resultados-parcial-*
+      --rapido        el subconjunto rápido (29 casos) → resultados-parcial-*
+
+    === Ejemplos ===
+      dotnet run                     # la batería
+      dotnet run -- comparar         # la comparativa
+      dotnet run -- --solo=Deriva    # sólo el grupo D
+      dotnet run -- casos --solo=A   # lista el grupo A, sin correr nada
+      printf '¿cuánto sale Panchos?\n/salir\n' | dotnet run -- explorar
+    """);
+}
+
+// La lista de la batería: id, grupo, tenant, pregunta, expectativa y nota.
+// No corre nada (ni la DB): es para ver qué se va a medir.
+static void ListarCasos(IReadOnlyList<Caso> casos)
+{
+    Console.WriteLine($"\n=== La batería: {casos.Count} casos ===");
+    foreach (var c in casos)
+    {
+        Console.WriteLine($"  {c.Id,-4} {c.Grupo,-12} {c.Tenant,-18} {c.Pregunta}");
+        var expectativas = new List<string>();
+        if (c.EsperaTexto is not null) expectativas.Add($"espera \"{c.EsperaTexto}\" (K={c.KValido})");
+        if (c.ExigeNoInfo) expectativas.Add("rechazo esperado");
+        if (c.ExigeSinSystemPrompt) expectativas.Add("sin system prompt");
+        if (c.ExigeError is not null) expectativas.Add($"error esperado: {c.ExigeError}");
+        if (c.ProhibidoEn.Length > 0) expectativas.Add($"prohíbe: {string.Join(", ", c.ProhibidoEn)}");
+        foreach (var e in expectativas) Console.WriteLine($"       {e}");
+        if (!string.IsNullOrWhiteSpace(c.Nota)) Console.WriteLine($"       nota: {c.Nota}");
+    }
+}
 
 // Sin shell de por medio: parsea KEY=VALUE plano (el password tiene ;&~ y
 // cualquier quoting/expansión de shell lo rompería). Busca ./.env hacia arriba

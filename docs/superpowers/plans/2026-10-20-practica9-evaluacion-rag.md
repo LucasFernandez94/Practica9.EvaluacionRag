@@ -41,6 +41,7 @@ Practica9.EvaluacionRag/
 ├── Runner.cs             # corre un escenario → tabla + json/csv
 ├── Escenario.cs          # (modelo, prompt, k) + Resultado + Resumen
 ├── Comparativa.cs        # agrega corridas → comparativa.csv
+├── Explorador.cs         # el chat de diagnóstico (pregunta → top-k → veredicto)
 ├── Deriva.cs             # el check de deriva (grupo D)
 ├── p8/                   # copias instrumentadas de la P8 (namespace Practica8.RagPostgres)
 │   ├── Indice.cs
@@ -1497,6 +1498,10 @@ static string? LeerSecret(string clave)
 }
 ```
 
+> El `"resultados"` de este snippet es el de la corrida COMPLETA (36 casos):
+> correcto. Una corrida PARCIAL (`--rapido`/`--solo`) escribe en
+> `resultados-parcial-*` (ver Task 6).
+
 - [ ] **Step 6: Build y primera corrida (rápida)**
 
 Run: `cd "/home/lucas/Documentos/Practicas LLM/Practica9.EvaluacionRag" && dotnet build && dotnet run`
@@ -1648,6 +1653,14 @@ var solo = args.FirstOrDefault(a => a.StartsWith("--solo=", StringComparison.Ord
 var casos = solo is null ? Casos.Todos : Casos.PorGrupo(solo);
 ```
 
+> **CORREGIDO en la Task 6** (esto quedó desincronizado y reintroducía un bug
+> ya cerrado): el `"resultados"` clavado hace que una corrida PARCIAL
+> (`--rapido`/`--solo`) pise los boletines completos. Ahora los dos calls usan
+> `salidaBase` (`resultados-parcial` si la corrida es parcial,
+> `resultados` si es completa), el modo es el primer argumento que NO empieza
+> con `--`, y el `default` muestra la ayuda. Ver el **Step 2 de la Task 6**
+> para el código final.
+
 - [ ] **Step 3: Build y correr el modo `comparar` (rápido, con `--rapido`)**
 
 Run: `cd "/home/lucas/Documentos/Practicas LLM/Practica9.EvaluacionRag" && dotnet build && dotnet run -- comparar`
@@ -1677,91 +1690,340 @@ git add -A && git commit -m "feat(p9): los 3 escenarios (modelos, prompts, k) y 
 
 - [ ] **Step 1: `Explorador.cs`**
 
+> El código REAL que quedó en el repo (después de la corrección del plan: el
+> `Asistente` de la P8 en vez del `Generador`, el bucle que corta en EOF, las
+> 3 medidas de etapa y los veredictos reutilizando `Verificadores.cs`).
+
 ```csharp
+using System.Diagnostics;
+using System.Globalization;
 using Practica8.RagPostgres;
 
 namespace Practica9.EvaluacionRag;
 
-// El modo explorador: la "vista" de la P9. Escribes una pregunta y ves
-// QUÉ recuperó el sistema, con qué score, y si la respuesta está grounded.
+// El modo explorador: la "vista" de la P9. Escribís una pregunta y ves QUÉ
+// recuperó el sistema, con qué score, y si la respuesta está grounded.
 // Es donde se entienden los casos raros.
+//
+// Usa el Asistente de la P8 (NO el Generador de la P9): el chat tiene que
+// medir el sistema real, con su prompt real (por eso el Asistente expone
+// UltimoPrompt y UltimaGeneracionMs).
+//
+// OJO con las medidas: Indice.UltimaBusquedaMs mide SÓLO el SELECT de
+// ranking (el ORDER BY con <=> y el LIMIT). NO cuenta el count(*) previo ni
+// la apertura de la conexión: el retrieval COMPLETO lo mide
+// Asistente.UltimaBusquedaMs, que por eso también se muestra.
 public static class Explorador
 {
     public static async Task RunAsync(Entorno env)
     {
         Console.WriteLine("\n=== Explorador (Ctrl+C para salir) ===");
+        Console.WriteLine("  comandos: /salir · /tenant <negocio> · /k <n|auto> · /prompt · /ayuda");
+        Console.WriteLine("  medidas: embed = POST /api/embed · búsqueda = SÓLO el SELECT de ranking");
+        Console.WriteLine("           (el count(*) y la apertura de conexión NO se cuentan)");
+        Console.WriteLine("           retrieval = conexión + count + rank · generación = POST /api/chat");
+        Console.WriteLine("  veredicto: grounded = todo precio de la respuesta está en el contexto");
+        Console.WriteLine("             aislamiento = los hits recuperados son del tenant pedido");
+        Console.WriteLine("  el índice es el que dejó la última corrida de la batería: acá NO se re-sincroniza.");
+
         var http = env.HttpFactory("http://localhost:11434");
         using var httpScope = http;
-        var embeddings = new Embeddings(http);
+        var embeddings = new Embeddings(http, env.ModelEmbed);
         var indice = new Indice(env.ConnStrPg);
         var asistente = new Asistente(http, indice, embeddings, env.ModelChat);
         var bc = new BcLectura(env.ConnStrBc);
         var mapa = await bc.NegociosAsync(Casos.TenantPepe, Casos.TenantDemo);
-        var tenant = mapa.Keys.First();
+        if (mapa.Count == 0)
+        {
+            Console.WriteLine("[error] No encontré los tenants de la batería en businesscore.");
+            return;
+        }
+        Console.WriteLine("  tenants: " + string.Join(" · ", mapa.Keys));
+
+        var tenant = mapa.ContainsKey(Casos.TenantPepe) ? Casos.TenantPepe : mapa.Keys.First();
 
         while (true)
         {
-            Console.Write($"\n[{tenant}] > ");
-            var input = Console.ReadLine()?.Trim();
-            if (string.IsNullOrWhiteSpace(input)) continue;
+            Console.Write($"\n[{tenant} · k={(asistente.ForzarContextoK is int fk ? fk.ToString() : "auto")}] > ");
+            var linea = Console.ReadLine();
+            // EOF (stdin cerrado, modo pipe): se sale. Sin este corte, el
+            // ReadLine devuelve null para siempre y el bucle muerde la CPU.
+            if (linea is null) break;
+            var input = linea.Trim();
+            if (input.Length == 0) continue;
             if (input.Equals("/salir", StringComparison.OrdinalIgnoreCase)) break;
-            if (input.StartsWith("/tenant ", StringComparison.OrdinalIgnoreCase))
+            if (input.Equals("/ayuda", StringComparison.OrdinalIgnoreCase) || input == "?")
             {
-                var n = input["/tenant ".Length..].Trim();
-                var m = mapa.Keys.FirstOrDefault(k => k.Contains(n, StringComparison.OrdinalIgnoreCase));
-                if (m is not null) tenant = m;
+                Console.WriteLine("  comandos: /salir · /tenant <negocio> · /k <n|auto> · /prompt · /ayuda");
+                continue;
+            }
+            if (input.StartsWith("/tenant", StringComparison.OrdinalIgnoreCase))
+            {
+                var n = input.Length > 7 ? input[7..].Trim() : "";
+                var elegido = mapa.Keys.FirstOrDefault(x => x.Contains(n, StringComparison.OrdinalIgnoreCase));
+                if (n.Length == 0 || elegido is null)
+                    Console.WriteLine($"  no encontré un tenant con \"{n}\". Disponibles: {string.Join(" · ", mapa.Keys)}");
+                else
+                {
+                    tenant = elegido;
+                    Console.WriteLine($"  tenant: {tenant}");
+                }
+                continue;
+            }
+            if (input.StartsWith("/k", StringComparison.OrdinalIgnoreCase))
+            {
+                var arg = input.Length > 2 ? input[2..].Trim() : "";
+                if (arg.Length == 0 || arg.Equals("auto", StringComparison.OrdinalIgnoreCase))
+                {
+                    // "auto": vuelve la regla adaptativa de la P7/P8 (catálogo
+                    // chico completo, si no top-3).
+                    indice.ForzarK = null;
+                    asistente.ForzarContextoK = null;
+                    Console.WriteLine("  k: automático (catálogo chico completo; si no, top-3)");
+                }
+                else if (int.TryParse(arg, out var nk) && nk > 0)
+                {
+                    // Las dos perillas: ForzarK recorta el LIMIT del SQL y
+                    // ForzarContextoK recorta lo que se le manda al modelo.
+                    indice.ForzarK = nk;
+                    asistente.ForzarContextoK = nk;
+                    Console.WriteLine($"  k forzado a {nk} (SQL y contexto)");
+                }
+                else
+                {
+                    Console.WriteLine("  /k espera un entero > 0 o \"auto\"");
+                }
+                continue;
+            }
+            if (input.Equals("/prompt", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine(asistente.UltimoPrompt ?? "(todavía no se mandó ningún prompt)");
                 continue;
             }
 
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            var (respuesta, citas) = await asistente.PreguntarAsync(mapa[tenant], tenant, input);
-            sw.Stop();
-
-            Console.WriteLine($"   embed: {embeddings.UltimoEmbedMs}ms · búsqueda: {indice.UltimaBusquedaMs}ms · generación: {asistente.UltimaGeneracionMs}ms");
-            Console.WriteLine("   top-3 (score = 1 - distancia coseno):");
-            foreach (var c in citas.Take(3)) Console.WriteLine($"     {c}");
-            Console.WriteLine($"   respuesta: {respuesta}");
-
-            var hits = await indice.BuscarAsync(mapa[tenant], await embeddings.EmbedConsultaAsync(input));
-            var contexto = string.Join(" ", hits.Select(h => h.Texto));
-            var grounded = System.Text.RegularExpressions.Regex.Matches(respuesta, @"[\d.,]+")
-                .Select(x => x.Value).Distinct().All(v => contexto.Contains(v, StringComparison.Ordinal));
-            Console.WriteLine($"   veredicto: grounded {(grounded ? "✔" : "✘")} · aislamiento ✔ ({hits.Count}/{hits.Count} hits del tenant) · {sw.Elapsed.TotalSeconds:F1}s");
+            try
+            {
+                await ResponderAsync(input, tenant, mapa[tenant], env, embeddings, indice, asistente);
+            }
+            catch (Exception ex)
+            {
+                // Una pregunta que falla NO mata el chat: se informa y se
+                // sigue (si Ollama se cayó, el operador decide qué hacer).
+                Console.WriteLine($"   [error] {ex.Message}");
+            }
         }
+    }
+
+    private static async Task ResponderAsync(
+        string input, string tenant, Guid tenantId, Entorno env,
+        Embeddings embeddings, Indice indice, Asistente asistente)
+    {
+        var sw = Stopwatch.StartNew();
+        var (respuesta, _citas) = await asistente.PreguntarAsync(tenantId, tenant, input);
+
+        // Las medidas del PEDIDO que produjo la respuesta: se leen ANTES del
+        // segundo retrieval (que pisa UltimaBusquedaMs con su propio número).
+        var embedMs = embeddings.UltimoEmbedMs;
+        var rankMs = indice.UltimaBusquedaMs;
+        var retrievalMs = asistente.UltimaBusquedaMs;
+        var genMs = asistente.UltimaGeneracionMs;
+
+        // El segundo retrieval: el Asistente devuelve las citas como TEXTO
+        // ("texto (score)"), sin el service_id. Para el veredicto de aislamiento
+        // hay que preguntarle a la DB de qué negocio es cada chunk: hace falta
+        // el id. Misma pregunta + mismo embedding → las mismas filas.
+        var q = await embeddings.EmbedConsultaAsync(input);
+        var hits = await indice.BuscarAsync(tenantId, q);
+        sw.Stop();
+
+        // El contexto REAL que se le mandó al modelo (con la perilla de k).
+        var contexto = hits.Count == 0
+            ? new List<string>()
+            : hits.Take(asistente.ForzarContextoK ?? hits.Count).Select(h => h.Texto).ToList();
+
+        var corrida = new Corrida(respuesta, hits, null, null, embedMs, rankMs, genMs, asistente.UltimoPrompt)
+        {
+            Contexto = contexto,
+            HitsAjenos = await Runner.HitsAjenosAsync(env.ConnStrPg, tenantId, hits)
+        };
+
+        // Los dos veredictos, con las MISMAS reglas de Verificadores.cs (no se
+        // reimplementan: la regla del groundedness es de VALOR, no de texto
+        // idéntico, y duplicarla acá la haría divergir de la batería):
+        //   - un caso sintético del grupo "Aislamiento" → los hits son del tenant;
+        //   - un caso sintético del grupo "Groundedness" → todo precio de la
+        //     respuesta está en el contexto. (Al groundedness se le vacían los
+        //     hits ajenos: son dos veredictos separados, no uno encadenado.)
+        var verAislamiento = Verificadores.Verificar(Sintetico("Aislamiento"), corrida, null);
+        var verGrounded = Verificadores.Verificar(Sintetico("Groundedness"), corrida with { HitsAjenos = [] }, null);
+
+        Console.WriteLine($"   embed: {embedMs}ms · búsqueda (rank): {rankMs}ms · retrieval: {retrievalMs}ms · generación: {genMs}ms");
+        Console.WriteLine($"   top-{hits.Count} recuperado (score = 1 - distancia coseno):");
+        for (var i = 0; i < Math.Min(hits.Count, 5); i++)
+            Console.WriteLine($"     {i + 1}. {hits[i].Texto} ({hits[i].Score.ToString("F2", CultureInfo.InvariantCulture)})");
+        if (hits.Count > 5) Console.WriteLine($"     … y {hits.Count - 5} más");
+        var kNota = asistente.ForzarContextoK is int fck ? $" (k forzado a {fck})" : "";
+        Console.WriteLine($"   contexto al modelo: {contexto.Count} chunk(s){kNota}");
+        if (hits.Count == 0) Console.WriteLine("   (fail-closed: no hay chunks para este tenant)");
+        Console.WriteLine($"   respuesta: {respuesta}");
+
+        var delTenant = hits.Count - corrida.HitsAjenos.Count;
+        Console.WriteLine($"   veredicto: grounded {(verGrounded.Paso ? "✔" : "✘")} · " +
+                          $"aislamiento {(verAislamiento.Paso ? "✔" : "✘")} ({delTenant}/{hits.Count} hits del tenant) · " +
+                          $"{sw.Elapsed.TotalSeconds:F1}s");
+        if (!verGrounded.Paso) Console.WriteLine($"     grounded: {verGrounded.Detalle}");
+        if (!verAislamiento.Paso) Console.WriteLine($"     aislamiento: {verAislamiento.Detalle}");
+    }
+
+    // Un caso sintético: el explorador no es un caso de la batería, pero las
+    // REGLAS que lo juzgan son las de Verificadores.cs (por grupo).
+    private static Caso Sintetico(string grupo) => new()
+    {
+        Id = "X", Grupo = grupo, Tenant = "-", Pregunta = "-"
+    };
+}
+```
+
+> `Runner.HitsAjenosAsync` pasó de `private` a `public` para que el
+> explorador use la MISMA regla de pertenencia al tenant (no duplicada).
+
+- [ ] **Step 2: Completar el switch de `Program.cs`**
+
+> El código REAL que quedó en el repo. **Ojo con `salidaBase`**: el plan
+> original clavaba `"resultados"` y una corrida parcial (`--rapido`/`--solo`)
+> pisaba los boletines completos. Y el MODO es el primer argumento que NO
+> empieza con `--` (los que empiezan con `--` son flags): antes se tomaba el
+> primer argumento y `dotnet run -- --rapido comparar` corría la batería.
+
+El parseo de los argumentos (al principio de `Program.cs`):
+
+```csharp
+// El MODO es el primer argumento que NO empieza con "--": los que empiezan
+// con "--" son flags (--rapido, --solo=<grupo>). Antes se tomaba el primer
+// argumento y "dotnet run -- --rapido comparar" corría la batería en vez de
+// la comparativa.
+var modo = args.FirstOrDefault(a => !a.StartsWith("--", StringComparison.Ordinal))?.ToLowerInvariant() ?? "bateria";
+var rapido = args.Contains("--rapido", StringComparer.OrdinalIgnoreCase);
+var solo = args.FirstOrDefault(a => a.StartsWith("--solo=", StringComparison.Ordinal))?.Split('=', 2)[1];
+var flagsDesconocidos = args
+    .Where(a => a.StartsWith("--", StringComparison.Ordinal)
+             && !string.Equals(a, "--rapido", StringComparison.OrdinalIgnoreCase)
+             && !a.StartsWith("--solo=", StringComparison.Ordinal))
+    .ToList();
+
+// Un modo o un flag desconocido NO dispara una corrida de 15 minutos: se
+// muestra la ayuda y se sale. ("dotnet run -- --comparar" no es un modo:
+// comparar no lleva guiones.)
+if (modo is not ("bateria" or "comparar" or "explorar" or "casos") || flagsDesconocidos.Count > 0)
+{
+    Ayuda(modo, flagsDesconocidos);
+    return 0;
+}
+
+// Los casos: --solo=<grupo> gana sobre --rapido.
+var casos = solo is not null ? Casos.PorGrupo(solo) : (rapido ? Casos.Rapido : Casos.Todos);
+if (casos.Count == 0)
+{
+    Console.WriteLine($"[error] El grupo \"{solo}\" no existe. " +
+                      "Grupos: R, A, I, G, B, D (o el nombre completo: Retrieval, Aislamiento, " +
+                      "Inyección, Groundedness, Robustez, Deriva).");
+    return 1;
+}
+
+// Una corrida PARCIAL (--rapido o --solo=<grupo>) escribe en OTRA base: los
+// boletines completos (resultados-*.csv/.json) son el entregable de la
+// práctica, y una corrida parcial no puede pisarlos con otros totales
+// (29 casos en vez de 36, o 6) sin que nadie se entere. La corrida completa
+// (sin flags) sigue escribiendo en "resultados-" como siempre.
+var parcial = rapido || solo is not null;
+var salidaBase = parcial ? "resultados-parcial" : "resultados";
+```
+
+Y el switch:
+
+```csharp
+var escenario = new Escenario("base", env.ModelChat);
+try
+{
+    switch (modo)
+    {
+        case "comparar":
+            Console.WriteLine($"  {(parcial ? "corrida parcial" : "corrida completa")} · escritura: {salidaBase}*");
+            await Comparativa.CorrerTodo(casos, env, salidaBase);
+            break;
+        case "explorar":
+            await Explorador.RunAsync(env);
+            break;
+        case "casos":
+            ListarCasos(casos);
+            break;
+        case "bateria":
+            Console.WriteLine($"  {(parcial ? "corrida parcial" : "corrida completa")} · escritura: {salidaBase}*");
+            var r = await Runner.CorrerAsync(casos, escenario, env, salidaBase);
+            Console.WriteLine($"\nResumen: {r.Pass}/{r.Total} ({r.Tasa:P0})");
+            break;
+        default:
+            // Cinturón y tirantes: la validación de arriba ya cortó los modos
+            // desconocidos, pero si algo se colara, se muestra la ayuda en vez
+            // de correr los 36 casos en silencio.
+            Ayuda(modo, flagsDesconocidos);
+            break;
     }
 }
 ```
 
-- [ ] **Step 2: Completar el switch de `Program.cs`**
+Y las dos funciones locales (al final de `Program.cs`):
 
 ```csharp
-switch (modo)
+// La ayuda: los modos válidos y cómo usarlos. Se muestra cuando el modo o
+// un flag no se entienden (y en vez de correr la batería a ciegas).
+static void Ayuda(string modo, IReadOnlyList<string> flagsDesconocidos)
 {
-    case "comparar":
-        await Comparativa.CorrerTodo(casos, env, "resultados");
-        break;
-    case "explorar":
-        await Explorador.RunAsync(env);
-        break;
-    case "casos":
-        foreach (var c in casos)
-            Console.WriteLine($"  {c.Id,-4} {c.Grupo,-12} {c.Tenant,-18} {c.Pregunta}" +
-                              (c.EsperaTexto is null ? "" : $"  → espera \"{c.EsperaTexto}\" (K={c.KValido})") +
-                              (c.ExigeError is null ? "" : $"  → error: {c.ExigeError}"));
-        break;
-    default:
-        var r = await Runner.CorrerAsync(casos, escenario, env, "resultados");
-        Console.WriteLine($"\nResumen: {r.Pass}/{r.Total} ({r.Tasa:P0})");
-        break;
+    if (modo is not ("bateria" or "comparar" or "explorar" or "casos"))
+        Console.WriteLine($"[error] Modo desconocido: \"{modo}\".");
+    foreach (var f in flagsDesconocidos)
+        Console.WriteLine($"[error] Flag desconocido: \"{f}\" (los modos no llevan guiones: \"{f.TrimStart('-')}\").");
+
+    Console.WriteLine("""
+
+    === Modos ===
+      bateria    la batería: 36 casos, un escenario → resultados-base.csv/.json
+      comparar   los 7 escenarios de la comparativa → resultados-<escenario>.csv/.json
+      explorar   el chat de diagnóstico: pregunta → embedding, top-k, respuesta y veredicto
+      casos      lista la batería (id, grupo, tenant, pregunta, expectativa, nota) sin correr nada
+      (sin modo) lo mismo que "bateria"
+
+    === Flags ===
+      --solo=<grupo>  sólo ese grupo (R, A, I, G, B, D o el nombre completo) → resultados-parcial-*
+      --rapido        el subconjunto rápido (29 casos) → resultados-parcial-*
+
+    === Ejemplos ===
+      dotnet run                     # la batería
+      dotnet run -- comparar         # la comparativa
+      dotnet run -- --solo=Deriva    # sólo el grupo D
+      dotnet run -- casos --solo=A   # lista el grupo A, sin correr nada
+      printf '¿cuánto sale Panchos?\n/salir\n' | dotnet run -- explorar
+    """);
 }
-```
 
-Y el flag `--rapido`:
-
-```csharp
-var rapido = args.Contains("--rapido", StringComparer.OrdinalIgnoreCase);
-var solo = args.FirstOrDefault(a => a.StartsWith("--solo=", StringComparison.Ordinal))?.Split('=', 2)[1];
-var casos = solo is not null ? Casos.PorGrupo(solo) : (rapido ? Casos.Rapido : Casos.Todos);
+// La lista de la batería: id, grupo, tenant, pregunta, expectativa y nota.
+// No corre nada (ni la DB): es para ver qué se va a medir.
+static void ListarCasos(IReadOnlyList<Caso> casos)
+{
+    Console.WriteLine($"\n=== La batería: {casos.Count} casos ===");
+    foreach (var c in casos)
+    {
+        Console.WriteLine($"  {c.Id,-4} {c.Grupo,-12} {c.Tenant,-18} {c.Pregunta}");
+        var expectativas = new List<string>();
+        if (c.EsperaTexto is not null) expectativas.Add($"espera \"{c.EsperaTexto}\" (K={c.KValido})");
+        if (c.ExigeNoInfo) expectativas.Add("rechazo esperado");
+        if (c.ExigeSinSystemPrompt) expectativas.Add("sin system prompt");
+        if (c.ExigeError is not null) expectativas.Add($"error esperado: {c.ExigeError}");
+        if (c.ProhibidoEn.Length > 0) expectativas.Add($"prohíbe: {string.Join(", ", c.ProhibidoEn)}");
+        foreach (var e in expectativas) Console.WriteLine($"       {e}");
+        if (!string.IsNullOrWhiteSpace(c.Nota)) Console.WriteLine($"       nota: {c.Nota}");
+    }
+}
 ```
 
 - [ ] **Step 3: Probar los 4 modos**
@@ -1773,9 +2035,16 @@ dotnet build
 dotnet run -- casos | head -8
 dotnet run -- --solo=Deriva
 printf '¿cuánto sale Panchos?\n/salir\n' | dotnet run -- explorar
+dotnet run -- --comparar   # NO es un modo: tiene que dar la ayuda, no correr 15 min
 ```
 
-Expected: `casos` lista la batería; `--solo=Deriva` corre 4 casos; el explorador imprime embed/búsqueda/generación, el top-3 y el veredicto.
+Expected: `casos` lista la batería; `--solo=Deriva` corre 4 casos; el explorador
+imprime embed/búsqueda/generación, el top-3 y el veredicto; `--comparar` (que
+empieza con `--`) muestra la ayuda sin correr nada.
+
+> Ojo con el explorador y el `pipe`: si el `ReadLine` devuelve `null` (EOF) el
+> bucle tiene que SALIR. Con el `continue` del plan original, el proceso
+> muerde la CPU para siempre.
 
 - [ ] **Step 4: Commit**
 
