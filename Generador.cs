@@ -9,13 +9,18 @@ namespace Practica9.EvaluacionRag;
 // (escenario E2) sin tocar la copia instrumentada, que debe quedar verbatim.
 //
 // El prompt por defecto es el de la P8, y su fidelidad se verifica en runtime
-// contra el prompt real que capturó la copia (p8/Asistente.cs → UltimoPrompt):
-// si el Generador dejara de usar el prompt de la P8, todas las mediciones
-// dependerían de un sistema que nadie corrió.
+// contra el BODY COMPLETO que capturó la copia (p8/Asistente.cs → UltimoBody):
+// si el Generador dejara de usar el body de la P8 (el system prompt Y el
+// mensaje de user con el contexto numerado), todas las mediciones dependerían
+// de un sistema que nadie corrió.
 public sealed class Generador
 {
     public string? PromptAdicional { get; set; }
     public long UltimaGeneracionMs { get; private set; }
+
+    // El body COMPLETO de la última request (el mismo formato que arma la P8):
+    // es lo que se compara, en runtime, con el que armó el Asistente real.
+    public string? UltimoBody { get; private set; }
 
     // El prompt de la P8, textual. Es el MISMO texto que el de p8/Asistente.cs
     // (verificado en runtime por Runner.VerificarFidelidadAsync).
@@ -26,11 +31,21 @@ public sealed class Generador
         "(2) Si te preguntan por uno solo, contestá solo ese. " +
         "(3) Si lo pedido no está en el contexto decí exactamente: \"No tengo esa información.\" No inventes.";
 
-    public async Task<(string Respuesta, string? Prompt)> GenerarAsync(
-        HttpClient http, string modelo, string negocio, List<string> contexto, string pregunta)
+    // El prompt que se manda: el de la P8, más la regla extra del escenario
+    // (E2) si la hay.
+    private string PromptDe(string negocio) =>
+        PromptP8(negocio) + (PromptAdicional is null ? "" : " " + PromptAdicional);
+
+    // El body de la request, ARMADO pero no enviado. Tiene que ser idéntico al
+    // que arma p8/Asistente.cs: mismo modelo, mismo system, mismo mensaje de
+    // user (con el contexto numerado) y mismas opciones.
+    public string ConstruirBody(string modelo, string negocio, List<string> contexto, string pregunta) =>
+        ArmarBody(modelo, negocio, contexto, pregunta).ToJsonString();
+
+    private JsonObject ArmarBody(string modelo, string negocio, List<string> contexto, string pregunta)
     {
-        var prompt = PromptP8(negocio) + (PromptAdicional is null ? "" : " " + PromptAdicional);
-        var body = new JsonObject
+        var prompt = PromptDe(negocio);
+        return new JsonObject
         {
             ["model"] = modelo,
             ["messages"] = new JsonArray
@@ -42,6 +57,14 @@ public sealed class Generador
             ["stream"] = false,
             ["options"] = new JsonObject { ["temperature"] = 0 }
         };
+    }
+
+    public async Task<(string Respuesta, string? Prompt)> GenerarAsync(
+        HttpClient http, string modelo, string negocio, List<string> contexto, string pregunta)
+    {
+        var body = ArmarBody(modelo, negocio, contexto, pregunta);
+        UltimoBody = body.ToJsonString();
+        var prompt = PromptDe(negocio);
         var sw = System.Diagnostics.Stopwatch.StartNew();
         using var response = await http.PostAsJsonAsync("/api/chat", body);
         response.EnsureSuccessStatusCode();

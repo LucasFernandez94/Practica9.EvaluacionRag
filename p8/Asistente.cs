@@ -47,6 +47,7 @@ public sealed class Asistente(HttpClient ollamaHttp, Indice indice, Embeddings e
             ["stream"] = false,
             ["options"] = new JsonObject { ["temperature"] = 0 }
         };
+        UltimoBody = body.ToJsonString(); // EVAL: captura del body COMPLETO de la request (P9) — para verificar la P9 entera contra la P8
         try
         {
             // El `using` va ACÁ: si EnsureSuccessStatusCode() o la lectura del body
@@ -77,5 +78,6 @@ public sealed class Asistente(HttpClient ollamaHttp, Indice indice, Embeddings e
     public long UltimaGeneracionMs { get; private set; } // EVAL: medición (P9)
     public int? ForzarContextoK { get; set; } // EVAL: forzado del tamaño del contexto (P9)
     public string? UltimoPrompt { get; private set; } // EVAL: captura del prompt real, para verificar que el Generador de la P9 sea fiel
+    public string? UltimoBody { get; private set; } // EVAL: captura del body COMPLETO de la request (system + user): el mensaje de user también tiene que ser el de la P8
     public long UltimaBusquedaMs { get; private set; } // EVAL: medición (P9) — el retrieval entero VISTO desde el asistente (conexión + count + rank), a diferencia de Indice.UltimaBusquedaMs (sólo el SELECT de ranking)
 }

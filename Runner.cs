@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Npgsql;
 using NpgsqlTypes;
@@ -261,35 +262,127 @@ public static class Runner
     }
 
     // La fidelidad del Generador: una llamada REAL al Asistente de p8/ (que
-    // captura UltimoPrompt) y la comparación con Generador.PromptP8(negocio).
+    // captura el body COMPLETO de la request) y la comparación con el body que
+    // arma el Generador para la MISMA pregunta y el MISMO contexto.
+    //
+    // Por qué el body COMPLETO y no sólo el system prompt: el mensaje de user
+    // ("Contexto:\n... [1] ...\n\nPregunta: ...") estaba duplicado a mano en
+    // el Generador y NUNCA se comparaba. Si alguien editaba el formato de ese
+    // mensaje en la P8, la copia se actualizaba (el grupo D seguía verde) pero
+    // la P9 seguía mandando el formato viejo: la medición dejaba de ser "la
+    // P8" en silencio.
+    //
     // Si difieren → error y se para: todas las mediciones quedarían hechas
-    // contra un prompt que no es el de la P8.
+    // contra un body que no es el de la P8.
     private static async Task VerificarFidelidadAsync(
         HttpClient http, Escenario esc, Dictionary<string, Guid> mapa, Indice indice, Embeddings embeddings)
     {
         var tenant = mapa.ContainsKey(Casos.TenantPepe) ? Casos.TenantPepe : mapa.Keys.First();
-        var asistente = new Asistente(http, indice, embeddings, esc.Modelo);
-        string? real;
+        var pregunta = "¿cuánto sale Panchos?";
+        var asistente = new Asistente(http, indice, embeddings, esc.Modelo)
+        { ForzarContextoK = esc.ForzarContextoK };
+        string? bodyP8;
         try
         {
-            await asistente.PreguntarAsync(mapa[tenant], tenant, "¿cuánto sale Panchos?");
-            real = asistente.UltimoPrompt;
+            await asistente.PreguntarAsync(mapa[tenant], tenant, pregunta);
+            bodyP8 = asistente.UltimoBody;
         }
         catch (Exception ex)
         {
             throw new FidelidadDelPromptException(
-                $"No pude verificar la fidelidad del prompt contra la P8: {ex.Message}", ex);
+                $"No pude verificar la fidelidad contra la P8: {ex.Message}", ex);
         }
-        if (real is null)
+        if (bodyP8 is null)
             throw new FidelidadDelPromptException(
-                "La P8 no capturó el prompt (UltimoPrompt = null): no hay con qué comparar.");
-        var esperado = Generador.PromptP8(tenant);
-        if (!string.Equals(real, esperado, StringComparison.Ordinal))
+                "La P8 no capturó el body de la request (UltimoBody = null): no hay con qué comparar.");
+
+        // El MISMO contexto: la misma pregunta, el mismo índice y la misma
+        // perilla de k ⇒ los mismos chunks (misma pregunta ⇒ mismo embedding;
+        // el índice no se toca durante el escenario).
+        var q = await embeddings.EmbedConsultaAsync(pregunta);
+        var hits = await indice.BuscarAsync(mapa[tenant], q);
+        if (esc.ForzarContextoK is int fck) hits = hits.Take(fck).ToList();
+        var contexto = hits.Select(h => h.Texto).ToList();
+
+        // El Generador con el prompt POR DEFECTO (el de la P8): el body tiene
+        // que ser idéntico, mensaje de user incluido.
+        var esperado = new Generador().ConstruirBody(esc.Modelo, tenant, contexto, pregunta);
+        if (!BodiesEquivalentes(bodyP8, esperado, null, out var det))
             throw new FidelidadDelPromptException(
-                "El prompt del Generador NO es el de la P8.\n" +
-                $"    P8        : {real}\n" +
-                $"    Generador : {esperado}");
-        Console.WriteLine($"  fidelidad · el prompt del Generador es byte-idéntico al de la P8 ({tenant})");
+                "El body que arma el Generador NO es el de la P8.\n" + det);
+
+        // Con la regla extra del escenario E2, el system tiene que ser el de la
+        // P8 + la regla (y el resto del body, igual).
+        if (esc.PromptAdicional is not null)
+        {
+            var conExtra = new Generador { PromptAdicional = esc.PromptAdicional }
+                .ConstruirBody(esc.Modelo, tenant, contexto, pregunta);
+            if (!BodiesEquivalentes(bodyP8, conExtra, esc.PromptAdicional, out var det2))
+                throw new FidelidadDelPromptException(
+                    "El prompt del escenario NO es el de la P8 + la regla extra.\n" + det2);
+        }
+        Console.WriteLine($"  fidelidad · el body COMPLETO (system + user) del Generador es idéntico al de la P8 ({tenant})");
+    }
+
+    // Dos bodies (el de la P8 y el del Generador) tienen que ser el mismo.
+    // La única diferencia admisible es la REGLA EXTRA del escenario E2, pegada
+    // al final del mensaje de system.
+    private static bool BodiesEquivalentes(string bodyP8, string bodyGenerador, string? reglaExtra, out string detalle)
+    {
+        detalle = "";
+        JsonNode? real, gen;
+        try
+        {
+            real = JsonNode.Parse(bodyP8);
+            gen = JsonNode.Parse(bodyGenerador);
+        }
+        catch (Exception ex)
+        {
+            detalle = $"no se pudo parsear uno de los bodies: {ex.Message}";
+            return false;
+        }
+        var mr = real?["messages"] as JsonArray;
+        var mg = gen?["messages"] as JsonArray;
+        if (mr is null || mg is null || mr.Count != 2 || mg.Count != 2)
+        {
+            detalle = "alguno de los bodies no tiene los dos mensajes (system + user)";
+            return false;
+        }
+
+        var userReal = (string?)mr[1]?["content"];
+        var userGen = (string?)mg[1]?["content"];
+        if (userReal != userGen)
+        {
+            detalle = "el mensaje de USER (contexto + pregunta) difiere:\n" +
+                      $"    P8       : {Recorte(userReal ?? "(null)")}\n" +
+                      $"    Generador: {Recorte(userGen ?? "(null)")}";
+            return false;
+        }
+
+        var sysReal = (string?)mr[0]?["content"];
+        var sysGen = (string?)mg[0]?["content"];
+        var sysEsperado = reglaExtra is null ? sysReal : sysReal + " " + reglaExtra;
+        if (sysGen != sysEsperado)
+        {
+            detalle = "el mensaje de SYSTEM difiere:\n" +
+                      $"    P8        : {Recorte(sysReal ?? "(null)")}\n" +
+                      $"    Generador : {Recorte(sysGen ?? "(null)")}";
+            return false;
+        }
+
+        if ((string?)real?["model"] != (string?)gen?["model"])
+        {
+            detalle = $"el modelo difiere: P8={real?["model"]} Generador={gen?["model"]}";
+            return false;
+        }
+
+        if (!JsonNode.DeepEquals(real?["options"], gen?["options"])
+            || !JsonNode.DeepEquals(real?["stream"], gen?["stream"]))
+        {
+            detalle = "las opciones (temperatura) o el stream difieren";
+            return false;
+        }
+        return true;
     }
 
     private static async Task<Corrida> EjecutarAsync(
