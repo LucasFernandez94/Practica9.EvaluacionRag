@@ -175,9 +175,11 @@ public static class Casos
     // sin tilde, así que "inyeccion", "Inyección" e "inyección" son el mismo
     // grupo. La inicial es la del PREFIJO del id (R1, A1, ...), no la primera
     // letra del nombre: "Robustez" arranca con R pero su clave es B.
-    public static IReadOnlyList<Caso> PorGrupo(string grupo)
+    public static IReadOnlyList<Caso> PorGrupo(string? grupo)
     {
-        var g = Normalizar(grupo);
+        // grupo nulo (o vacío) es "ningún grupo": la lista vacía, no una
+        // NullReferenceException.
+        var g = Normalizar(grupo ?? "");
         if (g.Length == 0) return [];
         return Todos.Where(c =>
         {
