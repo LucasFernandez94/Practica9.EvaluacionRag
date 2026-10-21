@@ -419,7 +419,9 @@ Agregar temporalmente al final de `Program.cs` (y sacarlo en el Step 6):
 // EVAL smoke
 var http = new HttpClient { BaseAddress = new Uri("http://localhost:11434") };
 var emb = new Practica8.RagPostgres.Embeddings(http);
-var idx = new Practica8.RagPostgres.Indice("Host=localhost;Port=5433;Database=rag;Username=postgres;Password=<valor>");
+var pgPass = Environment.GetEnvironmentVariable("PRACTICAS_PG_PASSWORD")
+    ?? throw new InvalidOperationException("Falta PRACTICAS_PG_PASSWORD (exportá el .env).");
+var idx = new Practica8.RagPostgres.Indice($"Host=localhost;Port=5433;Database=rag;Username=postgres;Password={pgPass}");
 var v = await emb.EmbedConsultaAsync("¿cuánto sale Panchos?");
 Console.WriteLine($"embed {emb.UltimoEmbedMs}ms · dims {v.Length}");
 ```
@@ -427,7 +429,7 @@ Console.WriteLine($"embed {emb.UltimoEmbedMs}ms · dims {v.Length}");
 Run: `dotnet run`
 Expected: `embed <N>ms · dims 768`.
 
-> Si el conn string con la password literal molesta al revisor, usar `Environment.GetEnvironmentVariable("PRACTICAS_PG_PASSWORD")` — pero recordá: **en el archivo versionado nunca va el valor**.
+> El conn string del smoke test **nunca** lleva el password literal: sale de `Environment.GetEnvironmentVariable("PRACTICAS_PG_PASSWORD")` (el `.env` es gitignored). Recordá: **en el archivo versionado nunca va el valor**.
 
 - [ ] **Step 6: Sacar el smoke test y commitear**
 
