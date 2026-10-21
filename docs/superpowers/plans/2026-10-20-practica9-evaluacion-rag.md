@@ -104,7 +104,7 @@ Ajustar el csproj a:
 cd "/home/lucas/Documentos/Practicas LLM/Practica9.EvaluacionRag"
 printf '.env\nbin/\nobj/\n.superpowers/\n' > .gitignore
 grep '^BC_PG_PASSWORD=' "/home/lucas/Documentos/Practicas LLM/Practica7.AsistenteBC/.env" > .env
-echo 'PRACTICAS_PG_PASSWORD=<valor>' >> .env
+echo "PRACTICAS_PG_PASSWORD=$(podman inspect practicas-pg --format '{{range .Config.Env}}{{println .}}{{end}}' | grep '^POSTGRES_PASSWORD=' | cut -d= -f2-)" >> .env
 chmod 600 .env
 git check-ignore .env && echo "OK: .env ignorado"
 ```
