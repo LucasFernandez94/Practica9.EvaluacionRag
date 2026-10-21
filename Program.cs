@@ -30,6 +30,14 @@ if (bcPass is null || pgPass is null)
     return 1;
 }
 
+// El modo: por defecto la batería (un solo escenario). "comparar" corre los 3
+// escenarios de la comparativa. Los flags --solo=<grupo> y --rapido eligen
+// qué casos se corren.
+var modo = args.FirstOrDefault() ?? "bateria";
+var rapido = args.Contains("--rapido", StringComparer.OrdinalIgnoreCase);
+var solo = args.FirstOrDefault(a => a.StartsWith("--solo=", StringComparison.Ordinal))?.Split('=', 2)[1];
+var casos = solo is not null ? Casos.PorGrupo(solo) : (rapido ? Casos.Rapido : Casos.Todos);
+
 // La deriva: si la P8 hermana no está, se SKIPEA (la batería tiene que poder
 // correr sola) y los casos D quedan marcados SKIPPED. Si la P8 está pero las
 // copias derivaron, los números no son de fiar: se corta.
@@ -80,8 +88,16 @@ var env = new Entorno
 var escenario = new Escenario("base", env.ModelChat);
 try
 {
-    var resumen = await Runner.CorrerAsync(Casos.Todos, escenario, env, "resultados");
-    Console.WriteLine($"\nResumen: {resumen.Pass}/{resumen.Total} ({resumen.Tasa:P0})");
+    switch (modo)
+    {
+        case "comparar":
+            await Comparativa.CorrerTodo(casos, env, "resultados");
+            break;
+        default:
+            var r = await Runner.CorrerAsync(casos, escenario, env, "resultados");
+            Console.WriteLine($"\nResumen: {r.Pass}/{r.Total} ({r.Tasa:P0})");
+            break;
+    }
 }
 catch (FidelidadDelPromptException ex)
 {
