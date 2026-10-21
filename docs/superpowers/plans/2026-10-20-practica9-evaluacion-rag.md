@@ -4,7 +4,7 @@
 
 **Goal:** Construir una consola .NET 8 que corre una batería de ~36 casos contra el sistema de retrieval de la P8 (índice `bc_service_chunks` en `practicas-pg`) y produce métricas de recall, aislamiento, prompt injection, groundedness, robustez y deriva de código.
 
-**Architecture:** La P9 copia los 4 archivos de la P8 en `p8/` con instrumentación **solo en líneas nuevas marcadas `// EVAL`**, de modo que el check de deriva sea una igualdad exacta de las líneas con contenido contra `../Practica8.RagPostgres/`. El retrieval se mide con el `Indice` de la P8 verbatim; la generación con un `Generador` del lado P9 cuyo prompt por defecto se verifica en runtime contra el prompt real que capturó la copia instrumentada. Los casos son declarativos (`Casos.cs`) y los verifica `Verificadores.cs` con reglas deterministas (presencia, pertenencia, reconstrucción, categoría de error) — nunca comparando texto idéntico.
+**Architecture:** La P9 copia los 4 archivos de la P8 en `p8/` con instrumentación **solo en líneas nuevas marcadas `// EVAL`**, de modo que el check de deriva sea una **comparación por subsecuencia** contra `../Practica8.RagPostgres/` (las líneas del original tienen que aparecer en orden dentro de la copia, y las que sobran tienen que llevar `// EVAL`). El retrieval se mide con el `Indice` de la P8 verbatim; la generación con un `Generador` del lado P9 cuyo prompt por defecto se verifica en runtime contra el prompt real que capturó la copia instrumentada. Los casos son declarativos (`Casos.cs`) y los verifica `Verificadores.cs` con reglas deterministas (presencia, pertenencia, reconstrucción, categoría de error) — nunca comparando texto idéntico.
 
 **Tech Stack:** .NET 8, Npgsql 10.0.3, `System.Text.Json`, protocolo crudo contra Ollama (`http://localhost:11434`). Sin librerías LLM, sin xUnit, sin paquetes nuevos.
 
@@ -19,7 +19,7 @@
 - La P9 **mide** el índice `bc_service_chunks` real de la P8. No crea tablas nuevas, no borra filas, no siembra datos. El runner re-sincroniza (idempotente) antes de cada escenario y lo deja escrito en el boletín.
 - **No tocar** `businesscore-postgres` (no instalar pgvector) ni la tabla `rag_chunks` de la P6.
 - Solo parámetros named (`@nombre`), nunca `$1`. Vector: `float[]` sin cast en el insert, `@q::vector` obligatorio en el ranking.
-- **Regla de la copia:** toda línea agregada a un archivo de `p8/` lleva `// EVAL` — **incluidas las separadoras, nunca una línea en blanco pelada**. Ninguna línea original se modifica. El drift check es de **SUBSECUENCIA**: las líneas del original tienen que aparecer, en orden, dentro de las de la copia, y las líneas que sobran tienen que llevar `// EVAL` (la igualdad exacta de listas no veía una línea original modificada con el `// EVAL` al final). El marcador se matchea **exacto**: `//EVAL` o `// eval` NO cuentan y se tratan como líneas no marcadas.
+- **Regla de la copia:** toda línea agregada a un archivo de `p8/` lleva `// EVAL` — **incluidas las separadoras, nunca una línea en blanco pelada**. Ninguna línea original se modifica. El drift check es de **SUBSECUENCIA**: las líneas del original tienen que aparecer, en orden, dentro de las de la copia, y las líneas que sobran tienen que llevar `// EVAL` (la igualdad exacta de listas también detectaba una línea original modificada con el `// EVAL` al final, pero por diferencia de largo y sin decir qué línea era). El marcador se matchea **exacto**: `//EVAL` o `// eval` NO cuentan y se tratan como líneas no marcadas.
 - Los casos de robustez **no apagan Ollama**: se simulan con un `HttpClient` de base URL a un puerto muerto, un modelo inexistente, un `Guid` de tenant aleatorio y un vector de 4 dims.
 - El pass/fail es **por comportamiento** (presencia, pertenencia, reconstrucción, categoría de error). Nunca por texto idéntico. Las tasas se **reportan**, no se gatean.
 - El drift check busca `../Practica8.RagPostgres/`. Si no está, los casos D se marcan **SKIPPED** con el motivo. Pero si lo que no se puede resolver es la **raíz de la P9** (falta el `.csproj` o el directorio `p8/`), eso es un **fallo** (exit 1), no un skip: la red no puede evaporarse en silencio.
@@ -2162,7 +2162,7 @@ Estructura mínima:
 # Práctica 9 — Batería de evaluación del RAG vectorial
 
 Mide el sistema de la P8 en vez de opinar sobre él. 36 casos, 6 grupos, 7 corridas
-(5 configuraciones distintas: `E1-llama32` ≡ `E2-prompt-p8` y `E3-k3` ≅ `E3-k6`).
+(6 configuraciones distintas: `E1-llama32` ≡ `E2-prompt-p8`).
 
 ## Qué mide
 
@@ -2224,8 +2224,8 @@ Las líneas en blanco no cuentan porque no llevan contenido semántico. El marca
 se matchea exacto: `//EVAL` o `// eval` no cuentan.
 
 Si alguien edita la lógica de la copia sin marcarlo, el caso D falla. Y si edita
-una línea ORIGINAL y le pone el `// EVAL` al final, también falla (con el
-chequeo de igualdad exacta ese cambio pasaba inadvertido).
+una línea ORIGINAL y le pone el `// EVAL` al final, también falla (el chequeo
+viejo lo detectaba por diferencia de largo, pero sin decir qué línea era).
 
 ## El concepto: el ground truth dinámico
 
@@ -2256,33 +2256,6 @@ resumen trae el **p50 y el p95 de cada una**.
   no son de fiar.
 - La latencia es descriptiva (modelo en CPU), no un benchmark.
 ````
-copia − (líneas con "// EVAL") − (líneas en blanco)
-  ==  original − (líneas en blanco)
-```
-
-Las líneas en blanco no cuentan porque no llevan contenido semántico. El marcador se matchea exacto: `//EVAL` o `// eval` no cuentan.
-
-Si alguien edita la lógica de la copia sin marcarlo, el caso D falla.
-
-## El concepto: KValido
-
-Con 6 servicios casi idénticos ("Consulta médica" ×3 a $1200 y ×3 a $1500), varias
-respuestas son **igualmente válidas**. Por eso cada caso declara cuántos
-resultados son válidos y el pass exige que el esperado esté entre los primeros
-`KValido`. El recall@1 real se **reporta** aunque no gatee.
-
-## Resultados
-
-<!-- pegar acá la tabla de la corrida final -->
-
-## Límites
-
-- Los modelos no son deterministas (temperature 0 tampoco): las tasas varían ±3
-  casos entre corridas. Por eso el pass es por comportamiento y las tasas se reportan.
-- La batería mide **copias**: el grupo D es la red. Si D falla, los demás números
-  no son de fiar.
-- La latencia es descriptiva (modelo en CPU), no un benchmark.
-```
 
 - [ ] **Step 5: Commitear el boletín y la doc**
 

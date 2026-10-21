@@ -101,25 +101,25 @@
         "Etapa": "embed",
         "P50": 48,
         "P95": 70,
-        "Muestras": 36
+        "Casos": 36
       },
       {
         "Etapa": "retrieval",
         "P50": 2,
         "P95": 2,
-        "Muestras": 36
+        "Casos": 36
       },
       {
         "Etapa": "rank",
         "P50": 0,
         "P95": 1,
-        "Muestras": 36
+        "Casos": 36
       },
       {
         "Etapa": "generacion",
         "P50": 2294,
         "P95": 14607,
-        "Muestras": 36
+        "Casos": 36
       }
     ]
   },

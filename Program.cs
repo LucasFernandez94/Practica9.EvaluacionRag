@@ -22,14 +22,6 @@ if (!raizResuelta || !Directory.Exists(Path.Combine(raizP9, "p8")))
     return 1;
 }
 
-var bcPass = LeerSecret("BC_PG_PASSWORD");
-var pgPass = LeerSecret("PRACTICAS_PG_PASSWORD");
-if (bcPass is null || pgPass is null)
-{
-    Console.WriteLine("Faltan credenciales. Creá un .env con BC_PG_PASSWORD y PRACTICAS_PG_PASSWORD.");
-    return 1;
-}
-
 // El MODO es el primer argumento que NO empieza con "--": los que empiezan
 // con "--" son flags (--rapido, --solo=<grupo>). Antes se tomaba el primer
 // argumento y "dotnet run -- --rapido comparar" corría la batería en vez de
@@ -51,6 +43,23 @@ if (modo is not ("bateria" or "comparar" or "explorar" or "casos" or "autotest")
 {
     Ayuda(modo, flagsDesconocidos);
     return 1;
+}
+
+// Las credenciales: las necesita la batería (DB y modelo). El autotest NO
+// toca ni la DB ni el modelo (es el instrumento contra sí mismo, con
+// respuestas preparadas a mano): pedirle un .env sería pedirle algo que no
+// usa. Por eso el chequeo va ACÁ, después de saber el modo, y no antes.
+string? bcPass = null;
+string? pgPass = null;
+if (modo != "autotest")
+{
+    bcPass = LeerSecret("BC_PG_PASSWORD");
+    pgPass = LeerSecret("PRACTICAS_PG_PASSWORD");
+    if (bcPass is null || pgPass is null)
+    {
+        Console.WriteLine("Faltan credenciales. Creá un .env con BC_PG_PASSWORD y PRACTICAS_PG_PASSWORD.");
+        return 1;
+    }
 }
 
 // Los casos: --solo=<grupo> gana sobre --rapido.

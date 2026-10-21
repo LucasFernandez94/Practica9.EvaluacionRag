@@ -335,9 +335,24 @@ public static class Runner
     }
 
     // Dos bodies (el de la P8 y el del Generador) tienen que ser el mismo.
+    //
+    // La comparación es del BODY ENTERO (JsonNode.DeepEquals), no campo por
+    // campo: si el Generador metiera una clave top-level que la P8 no tiene
+    // (por ejemplo "keep_alive"), la diferencia tiene que FALLAR. Antes se
+    // comparaban "messages", "model", "stream" y "options" por separado, así
+    // que una clave nueva (o una que sobrara) pasaba inadvertida.
+    //
     // La única diferencia admisible es la REGLA EXTRA del escenario E2, pegada
-    // al final del mensaje de system.
-    private static bool BodiesEquivalentes(string bodyP8, string bodyGenerador, string? reglaExtra, out string detalle)
+    // al final del mensaje de system: se aplica al body de la P8 y después se
+    // compara el body entero.
+    //
+    // El DIAGNÓSTICO sigue siendo campo por campo (para que el error diga
+    // QUÉ difiere, no sólo que difiere), pero el veredicto lo decide el
+    // DeepEquals del body completo.
+    //
+    // INTERNAL (no private): el autotest la usa para probar que una clave
+    // top-level nueva en el body del Generador se detecta.
+    internal static bool BodiesEquivalentes(string bodyP8, string bodyGenerador, string? reglaExtra, out string detalle)
     {
         detalle = "";
         JsonNode? real, gen;
@@ -351,48 +366,96 @@ public static class Runner
             detalle = $"no se pudo parsear uno de los bodies: {ex.Message}";
             return false;
         }
-        var mr = real?["messages"] as JsonArray;
-        var mg = gen?["messages"] as JsonArray;
+        if (real is null || gen is null)
+        {
+            detalle = "alguno de los bodies es null";
+            return false;
+        }
+
+        // El cuerpo ESPERADO: el de la P8 con la regla extra pegada al final
+        // del mensaje de system (el escenario E2), si la hay.
+        var esperado = real.DeepClone();
+        if (reglaExtra is not null)
+        {
+            if (esperado is not JsonObject eoRegla ||
+                eoRegla["messages"] is not JsonArray msgsRegla || msgsRegla.Count != 2 ||
+                msgsRegla[0] is not JsonObject objRegla ||
+                (objRegla["content"]?.GetValue<string>()) is not string sysRegla)
+            {
+                detalle = "el body de la P8 no tiene los dos mensajes (system + user)";
+                return false;
+            }
+            objRegla["content"] = sysRegla + " " + reglaExtra;
+        }
+
+        if (JsonNode.DeepEquals(esperado, gen)) return true;
+        detalle = Diagnostico(esperado, gen, reglaExtra is not null);
+        return false;
+    }
+
+    // El diagnóstico campo por campo: qué parte del body difiere. NO decide el
+    // veredicto (eso lo decide el DeepEquals del body completo): sólo dice
+    // dónde está la diferencia.
+    private static string Diagnostico(JsonNode esperado, JsonNode gen, bool conRegla)
+    {
+        if (esperado is not JsonObject eo || gen is not JsonObject go)
+            return "alguno de los bodies no es un objeto JSON";
+
+        // Las claves top-level: una clave que la P8 no tiene (o al revés) ya
+        // alcanza para que los bodies sean distintos.
+        var clavesEsperadas = eo.Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
+        var clavesGen = go.Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
+        var deMas = clavesGen.Except(clavesEsperadas).ToList();
+        var deMasP8 = clavesEsperadas.Except(clavesGen).ToList();
+        if (deMas.Count > 0 || deMasP8.Count > 0)
+        {
+            var partes = new List<string>();
+            if (deMas.Count > 0)
+                partes.Add($"el body tiene claves que la P8 NO tiene: {string.Join(", ", deMas)}");
+            if (deMasP8.Count > 0)
+                partes.Add($"el body NO tiene las claves de la P8: {string.Join(", ", deMasP8)}");
+            return "el body COMPLETO difiere (" + string.Join("; ", partes) + ")";
+        }
+
+        var mr = eo["messages"] as JsonArray;
+        var mg = go["messages"] as JsonArray;
         if (mr is null || mg is null || mr.Count != 2 || mg.Count != 2)
         {
-            detalle = "alguno de los bodies no tiene los dos mensajes (system + user)";
-            return false;
+            return "alguno de los bodies no tiene los dos mensajes (system + user)";
         }
 
-        var userReal = (string?)mr[1]?["content"];
+        var userEsperado = (string?)mr[1]?["content"];
         var userGen = (string?)mg[1]?["content"];
-        if (userReal != userGen)
+        if (userEsperado != userGen)
         {
-            detalle = "el mensaje de USER (contexto + pregunta) difiere:\n" +
-                      $"    P8       : {Recorte(userReal ?? "(null)")}\n" +
-                      $"    Generador: {Recorte(userGen ?? "(null)")}";
-            return false;
+            return "el mensaje de USER (contexto + pregunta) difiere:\n" +
+                   $"    P8       : {Recorte(userEsperado ?? "(null)")}\n" +
+                   $"    Generador: {Recorte(userGen ?? "(null)")}";
         }
 
-        var sysReal = (string?)mr[0]?["content"];
+        var sysEsperado = (string?)mr[0]?["content"];
         var sysGen = (string?)mg[0]?["content"];
-        var sysEsperado = reglaExtra is null ? sysReal : sysReal + " " + reglaExtra;
-        if (sysGen != sysEsperado)
+        if (sysEsperado != sysGen)
         {
-            detalle = "el mensaje de SYSTEM difiere:\n" +
-                      $"    P8        : {Recorte(sysReal ?? "(null)")}\n" +
-                      $"    Generador : {Recorte(sysGen ?? "(null)")}";
-            return false;
+            return "el mensaje de SYSTEM difiere:\n" +
+                   $"    {(conRegla ? "P8 + regla" : "P8       ")}: {Recorte(sysEsperado ?? "(null)")}\n" +
+                   $"    Generador : {Recorte(sysGen ?? "(null)")}";
         }
 
-        if ((string?)real?["model"] != (string?)gen?["model"])
+        if ((string?)eo["model"] != (string?)go["model"])
         {
-            detalle = $"el modelo difiere: P8={real?["model"]} Generador={gen?["model"]}";
-            return false;
+            return $"el modelo difiere: P8={eo["model"]} Generador={go["model"]}";
         }
 
-        if (!JsonNode.DeepEquals(real?["options"], gen?["options"])
-            || !JsonNode.DeepEquals(real?["stream"], gen?["stream"]))
-        {
-            detalle = "las opciones (temperatura) o el stream difieren";
-            return false;
-        }
-        return true;
+        if (!JsonNode.DeepEquals(eo["options"], go["options"]))
+            return "las opciones (temperatura) difieren";
+        if (!JsonNode.DeepEquals(eo["stream"], go["stream"]))
+            return "el stream difiere";
+
+        // Mismo esqueleto, mismo contenido de los campos conocidos: la
+        // diferencia tiene que estar en algo más (un "role" que no es el de la
+        // P8, un campo anidado, el orden de las claves...).
+        return "el body COMPLETO difiere (mismas claves, otro contenido)";
     }
 
     private static async Task<Corrida> EjecutarAsync(

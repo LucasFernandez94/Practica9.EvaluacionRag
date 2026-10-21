@@ -75,8 +75,16 @@ public static class Autotest
         var g3 = Casos.Todos.First(c => c.Id == "G3");
         var corridaPesos = new Corrida("Panchos: 1500 pesos", [], null, null, 0, 0, 0, null)
         { Contexto = new List<string> { "Panchos: $30.00 ARS, 30 min. Con moztaza sale mas" } };
-        fallos += Chequear("el groundedness ve un precio sin '$' (1500 pesos)",
-            !Verificadores.Verificar(g3, corridaPesos, null).Paso);
+        // La MISMA alucinación con "Pesos" en MAYÚSCULA: el regex la detectaba
+        // (es IgnoreCase) pero la palabra de la moneda se quitaba con
+        // comparación sensible ⇒ el texto que quedaba ("1500Pesos") no
+        // parseaba ⇒ el precio volvía null ⇒ se DESCARTABA EN SILENCIO y la
+        // alucinación pasaba inadvertida.
+        var corridaPesosMayus = new Corrida("Panchos: 1500 Pesos", [], null, null, 0, 0, 0, null)
+        { Contexto = new List<string> { "Panchos: $30.00 ARS, 30 min. Con moztaza sale mas" } };
+        fallos += Chequear("el groundedness ve un precio sin '$' (1500 pesos, y con 'Pesos' en mayúscula)",
+            !Verificadores.Verificar(g3, corridaPesos, null).Paso
+            && !Verificadores.Verificar(g3, corridaPesosMayus, null).Paso);
         var corridaOk = new Corrida("Panchos: 30 pesos", [], null, null, 0, 0, 0, null)
         { Contexto = new List<string> { "Panchos: $30.00 ARS, 30 min. Con moztaza sale mas" } };
         fallos += Chequear("el groundedness acepta el precio en pesos del contexto",
@@ -91,9 +99,26 @@ public static class Autotest
             verB3.Paso && verB3.FraseExacta is null);
 
         // 5) EL CHECK DE DERIVA: tiene que detectar una línea original
-        //    MODIFICADA, marcarla o no (el agujero viejo) y una línea original
+        //    MODIFICADA, marcarla o no (el caso que el chequeo viejo veía por
+        //    diferencia de largo, pero sin decir dónde) y una línea original
         //    BORRADA.
         fallos += ChequearDeriva(raizP9);
+
+        // 6) LA FIDELIDAD DEL BODY: se compara el body COMPLETO, no campo por
+        //    campo. Antes se comparaban "messages", "model", "stream" y
+        //    "options" por separado, así que una clave top-level nueva en el
+        //    body del Generador (por ejemplo "keep_alive") pasaba
+        //    inadvertida: la batería seguía midiendo un cuerpo que la P8 no
+        //    mandaba.
+        var bodyP8 = """
+            {"model":"llama3.2:3b","messages":[{"role":"system","content":"S"},{"role":"user","content":"U"}],"stream":false,"options":{"temperature":0}}
+            """;
+        var bodyConClaveNueva = """
+            {"model":"llama3.2:3b","messages":[{"role":"system","content":"S"},{"role":"user","content":"U"}],"stream":false,"options":{"temperature":0},"keep_alive":true}
+            """;
+        fallos += Chequear("la fidelidad compara el body ENTERO (una clave top-level nueva se detecta)",
+            Runner.BodiesEquivalentes(bodyP8, bodyP8, null, out _)
+            && !Runner.BodiesEquivalentes(bodyP8, bodyConClaveNueva, null, out _));
 
         Console.WriteLine(fallos == 0
             ? "\n  ✔ autotest: el instrumento se midió a sí mismo y no tiene puntos ciegos."
@@ -153,7 +178,8 @@ public static class Autotest
                 !Deriva.Verificar(raizP8, tmp).All(d => d.Igual));
 
             // (b) la MISMA línea modificada, con el "// EVAL" al final: el
-            //     agujero que el chequeo viejo no veía.
+            //     caso que el chequeo viejo detectaba por diferencia de largo,
+            //     pero sin decir qué línea era.
             var marcado = (string[])modificado.Clone();
             marcado[linea] = marcado[linea] + " // EVAL: instrumentación";
             File.WriteAllLines(asis, marcado);

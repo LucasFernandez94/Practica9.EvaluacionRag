@@ -122,7 +122,8 @@ public sealed record Resumen(
     // del escenario (los que no hicieron esa etapa valen 0): el rank es
     // sub-milisegundo, así que un 0 ahí es una MEDICIÓN, no un "no corrió".
     // El índice es el mismo que usa el p90 del total (percentil por rango,
-    // sobre la lista ordenada).
+    // sobre la lista ordenada). El conteo que se reporta es el de CASOS
+    // considerados (ver EtapaResumen).
     private static IReadOnlyList<EtapaResumen> EtapasDe(List<Resultado> rs)
     {
         var etapas = new (string Nombre, Func<Resultado, long> Valor)[]
@@ -149,8 +150,16 @@ public sealed record Resumen(
     }
 }
 
-// El resumen de UNA etapa: el p50 y el p95 (en ms) y cuántas muestras hay.
-public sealed record EtapaResumen(string Etapa, long P50, long P95, int Muestras);
+// El resumen de UNA etapa: el p50 y el p95 (en ms) y cuántos casos se
+// consideraron.
+//
+// "Casos" (no "mediciones"): el percentil se calcula sobre TODOS los casos
+// del escenario y los que NO hicieron esa etapa aportan 0 (los 4 casos D, B3
+// (respuesta sintética), B4 y B5, y los que fallan antes de generar). El 0 de
+// un caso que no midió la etapa es indistinguible del 0 real de una etapa
+// sub-milisegundo (el rank), así que el conteo honesto es el de CASOS
+// considerados, y la convención de los ceros está documentada en el README.
+public sealed record EtapaResumen(string Etapa, long P50, long P95, int Casos);
 
 // El sub-resumen por grupo. Es un record y no una tupla (int Pass, int Total)
 // porque las tuplas de System.Text.Json se serializan como {} (sus members son

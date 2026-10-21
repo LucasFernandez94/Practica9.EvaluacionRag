@@ -48,7 +48,7 @@ dotnet run                # la batería: 36 casos, un escenario → resultados-b
 dotnet run -- comparar    # los 7 escenarios → resultados-<escenario>.csv/.json + resultados-comparativa.csv
 dotnet run -- explorar    # modo interactivo: pregunta → embedding, top-k, respuesta y veredicto
 dotnet run -- casos       # listar la batería (id, grupo, tenant, pregunta, expectativa, nota)
-dotnet run -- autotest    # el instrumento medido a sí mismo (reglas críticas, sin DB ni modelo)
+dotnet run -- autotest    # el instrumento medido a sí mismo (reglas críticas, sin DB, sin modelo y sin credenciales)
 dotnet run -- --solo=Retrieval   # un grupo (R, A, I, G, B, D o el nombre completo)
 dotnet run -- --rapido           # el subconjunto rápido (29 casos)
 ```
@@ -58,11 +58,12 @@ y **no pisan** los boletines completos: los `resultados-*.csv/.json` versionados
 son el boletín de la práctica.
 
 El exit code es 0 salvo en los casos en que la corrida no es confiable o la
-invocación está mal: error de invocación (modo o flag desconocido), credenciales
-faltantes, grupo inexistente, **deriva de las copias de `p8/`** y **falla de la
-fidelidad contra la P8** (el body que arma el Generador no es el que armó el
-Asistente). Todos esos salen con **1**. Las tasas, en cambio, se **reportan**, no
-se gatean.
+invocación está mal: error de invocación (modo o flag desconocido),
+credenciales faltantes (en los modos que las necesitan: el `autotest` no las
+pide, porque no toca ni la DB ni el modelo), grupo inexistente, **deriva de las
+copias de `p8/`** y **falla de la fidelidad contra la P8** (el body que arma el
+Generador no es el que armó el Asistente). Todos esos salen con **1**. Las
+tasas, en cambio, se **reportan**, no se gatean.
 
 ## La regla de la copia
 
@@ -84,14 +85,17 @@ al final: si i < original.Count ⇒ faltan N líneas del original ⇒ FALLA
 Las líneas en blanco no cuentan porque no llevan contenido semántico. El marcador
 se matchea exacto: `//EVAL` o `// eval` no cuentan.
 
-Por qué subsecuencia y no "las dos listas son iguales": con la igualdad exacta,
-una línea **original modificada** a la que se le pone el `// EVAL` al final
-desaparecía de la comparación ⇒ el cambio quedaba invisible y el grupo D
-daba verde en falso, justo donde importa. Con la subsecuencia, esa línea no
-matchea hacia adelante ⇒ el original queda sin consumir ⇒ **FALLA** (el mensaje
-lo dice: "parece una línea ORIGINAL modificada — el original quedó sin
-consumir"). El `autotest` prueba las tres variantes (modificada sin marcar,
-modificada con `// EVAL` al final, y borrada).
+Por qué subsecuencia y no "las dos listas son iguales": el chequeo viejo
+(igualdad exacta de las líneas con contenido, sacando las marcadas) **también
+detectaba** una línea original modificada — al descartarla de la copia, los
+largos dejaban de coincidir y la diferencia salía — pero **sin decir dónde**:
+el mensaje era "difieren en la línea N", sin distinguir una línea original
+modificada de una agregada sin marcar o de una borrada. La subsecuencia no es
+más débil: es la misma detección **con el diagnóstico específico** ("línea 42 de
+la copia: no coincide con el original y no está marcada: parece una línea
+ORIGINAL modificada — el original quedó sin consumir"). El `autotest` prueba
+las tres variantes (modificada sin marcar, modificada con `// EVAL` al final, y
+borrada).
 
 Además, el Generador de la P9 no se fía de "copié el prompt": en runtime se
 compara el **body COMPLETO** de la request (system + user) que armó el
@@ -154,6 +158,16 @@ Las dos columnas de SQL están separadas a propósito: el `rank` es
 "SQL ≈ 0 ms" era una afirmación sobre **dónde estaba el cronómetro**, no sobre
 el sistema. Con las dos columnas se ve que el trabajo de base completo son 1-2
 ms, y que el tiempo real está en el modelo.
+
+**La convención de los ceros**: el p50 y el p95 de cada etapa se calculan sobre
+**todos los casos del escenario** (36), y los que **no hicieron esa etapa**
+aportan 0: los 4 casos D (no preguntan nada), B3 (la respuesta la arma el
+runner), B4 y B5 (fallan antes de medir) y los que tiran excepción antes de
+generar. Es una convención, no una medición: el 0 de un caso que no midió la
+etapa es indistinguible del 0 real de una etapa sub-milisegundo (el `rank`).
+Por eso el boletín reporta `Casos` (los considerados para el percentil) y no
+"mediciones": la cuenta honesta de las mediciones reales por etapa no se puede
+separar con los datos que hoy deja la corrida.
 
 ## Resultados
 
@@ -330,8 +344,10 @@ y nunca se comparaba: si alguien editaba ese formato en la P8, la copia se
 actualizaba (el grupo D seguía verde) y la P9 seguía mandando el formato
 viejo ⇒ la medición dejaba de ser "la P8" en silencio. Ahora el Asistente
 expone el body completo (`UltimoBody`, una línea `// EVAL`) y el runner compara
-body contra body, con la misma pregunta y el mismo contexto, en cada
-escenario: si difieren, la corrida aborta con exit 1.
+el body **entero** contra el body entero (`JsonNode.DeepEquals`), con la misma
+pregunta y el mismo contexto, en cada escenario: si difieren —incluida una
+clave top-level que la P8 no manda, como un `keep_alive`—, la corrida aborta
+con exit 1. El `autotest` prueba que una clave así se detecta.
 
 **13. (nuevo) Dónde se va el tiempo: el modelo, casi todo.** Con el retrieval
 completo medido aparte (antes sólo se medía el `SELECT` de ranking, que es
@@ -342,15 +358,18 @@ resto. Con 6 chunks (E3-k6) la generación sube a 2876 ms de p50 (+28%) y el
 p90 del caso se va a 14,6 s: **más contexto es más caro y no aporta recall**
 (10/10 igual que con 3).
 
-**14. (nuevo) El check de deriva tenía un agujero y ya no lo tiene.** El
-chequeo comparaba la lista completa de líneas: una línea **original modificada**
-a la que se le ponía el `// EVAL` al final desaparecía de la comparación ⇒ el
-cambio no se veía ⇒ el grupo D quedaba verde en falso. Ahora el check es de
-**subsecuencia con inserciones marcadas**: las líneas del original tienen que
-aparecer en orden dentro de la copia, y las que sobran tienen que llevar
-`// EVAL`. Con eso, una línea original modificada (marcada o no) y una línea
-original borrada **fallan**. El `autotest` prueba las tres variantes contra
-copias modificadas en un directorio temporal.
+**14. (nuevo) El check de deriva ahora DICE qué línea difiere.** El chequeo
+comparaba la lista completa de líneas: una línea **original modificada** a la
+que se le ponía el `// EVAL` al final desaparecía de la comparación, así que los
+largos dejaban de coincidir ⇒ la deriva **sí se detectaba**, pero el mensaje
+era "difieren en la línea N" y no distinguía una línea original modificada de
+una agregada sin marcar o de una borrada. Ahora el check es de **subsecuencia
+con inserciones marcadas**: las líneas del original tienen que aparecer en
+orden dentro de la copia, y las que sobran tienen que llevar `// EVAL`. Misma
+detección, **diagnóstico específico** ("parece una línea ORIGINAL modificada —
+el original quedó sin consumir"). Con eso, una línea original modificada
+(marcada o no) y una línea original borrada **fallan**. El `autotest` prueba
+las tres variantes contra copias modificadas en un directorio temporal.
 
 **15. (nuevo) El grupo Robustez ya no se infla a sí mismo.** La respuesta de
 B3 (el fail-closed del tenant vacío) la arma el runner, no el modelo: contaba
@@ -375,7 +394,8 @@ conteo de Robustez es 0/0 (no aplica): la métrica mide al modelo.
   - el pass de retrieval es "hay una respuesta válida en el contexto", no "la
     respuesta del modelo es la correcta" (hallazgo 8);
   - el groundedness compara **precios por valor** (con `$` o sin `$`: "1500
-    pesos" también se mide), no nombres ni duraciones: un servicio inventado con
+    pesos" también se mide, sin distinguir mayúsculas en la palabra de la
+    moneda), no nombres ni duraciones: un servicio inventado con
     un precio real pasa (hallazgo 3);
   - el grupo D es la red: si D falla, los demás números no son de fiar, y por eso
     la P9 **corta** si las copias derivaron;

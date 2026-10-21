@@ -19,12 +19,17 @@ public sealed record ResultadoDrift(string Archivo, bool Igual, string Detalle);
 //
 // Por qué no "mismo largo + SequenceEqual": ese chequeo comparaba la lista
 // COMPLETA, así que una línea original MODIFICADA (con un "// EVAL" al final)
-// desaparecía de la comparación y el cambio quedaba INVISIBLE: el grupo D
-// quedaba verde en falso justo donde importa. Con la subsecuencia:
+// desaparecía de la comparación. OJO: la deriva NO se escapaba — al
+// descartarse esa línea de la copia, los largos dejaban de coincidir y el
+// check la reportaba — pero el mensaje era "difieren en la línea N", sin
+// decir QUÉ línea era ni distinguir una original modificada de una agregada
+// sin marcar o de una borrada. La subsecuencia mantiene la detección y suma
+// el diagnóstico específico:
 //
 //   - las líneas agregadas (marcadas) se saltan ✔
 //   - una línea original MODIFICADA ya no matchea ⇒ además no matchea hacia
-//     adelante ⇒ el original queda sin consumir ⇒ FALLA ✔
+//     adelante ⇒ el original queda sin consumir ⇒ FALLA (con el número de
+//     línea y el aviso de que parece una línea ORIGINAL modificada) ✔
 //   - una línea original BORRADA ⇒ falta ⇒ FALLA ✔
 //
 // Las líneas en blanco se ignoran de los dos lados porque no llevan contenido
@@ -76,8 +81,9 @@ public static class Deriva
                 {
                     // Si la línea anterior de la copia era una inserción marcada,
                     // lo más probable es que ÉSTA sea una línea ORIGINAL
-                    // modificada (con el "// EVAL" al final): el agujero que el
-                    // chequeo viejo no veía.
+                    // modificada (con el "// EVAL" al final): el caso que el
+                    // chequeo viejo detectaba por diferencia de largo, pero sin
+                    // decir dónde.
                     problema = previaEraInsercion
                         ? $"línea {linea.Numero} de la copia: \"{Recorte(linea)}\" no coincide con el " +
                           $"original y no está marcada con // EVAL (y la línea anterior, la {numeroPrevia}, " +

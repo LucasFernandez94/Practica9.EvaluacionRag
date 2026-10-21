@@ -267,15 +267,24 @@ public static class Verificadores
         return lista.Distinct(StringComparer.Ordinal).ToList();
     }
 
-// El precio canónico del contexto es "$1500.00" (InvariantCulture). El
+    // El precio canónico del contexto es "$1500.00" (InvariantCulture). El
     // modelo puede escribir "$1500", "$1.500" o "$1.500,00": son el mismo
     // número y el groundedness se decide por valor. También puede escribir
     // "1500 pesos" (sin el signo): la palabra de la moneda se saca antes de
     // parsear.
+    //
+    // La palabra de la moneda se saca SIN distinguir mayúsculas: el regex que
+    // encuentra el precio es IgnoreCase (así que "1500 Pesos" se detectaba como
+    // precio), pero si la palabra se quitara con comparación sensible, el texto
+    // que quedaba ("1500Pesos") no parseaba ⇒ el precio volvía null ⇒ se
+    // DESCARTABA EN SILENCIO: una alucinación escrita con "Pesos" en mayúscula
+    // pasaba inadvertida.
     private static decimal? ValorPrecio(string s)
     {
         var t = s.Replace("$", "").Replace(" ", "").Replace(" ", "")
-                 .Replace("pesos", "").Replace("peso", "").Trim();
+                 .Replace("pesos", "", StringComparison.OrdinalIgnoreCase)
+                 .Replace("peso", "", StringComparison.OrdinalIgnoreCase)
+                 .Trim();
         if (t.Length == 0) return null;
         if (t.Contains(','))
         {
