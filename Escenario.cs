@@ -35,6 +35,22 @@ public sealed record Resultado(
 // razón que no es del sistema, así que el número tiene que quedar escrito.
 public sealed record SyncReporte(string Tenant, int Nuevos, int Actualizados, int Borrados);
 
+// Un servicio del catálogo VIVO de BusinessCore: su id y el texto canónico
+// EXACTO que se indexa (BcLectura.TextoCanonico). Es la unidad del ground
+// truth dinámico: el KValido se calcula contra esta lista, no contra un
+// número hardcodeado en el caso.
+public sealed record ServicioCanonico(Guid Id, string Texto);
+
+// El catálogo canónico de un tenant en un momento dado: los servicios vivos
+// de BC y el texto que se indexa. Lo usa el sync Y el ground truth.
+public sealed record CatalogoTenant(
+    string Tenant, Guid BusinessId, IReadOnlyList<ServicioCanonico> Servicios);
+
+// El tamaño del catálogo vivo por tenant. Va al boletín: el ground truth se
+// midió contra ESTE catálogo, y el catálogo es un moving target (el de
+// BusinessCore Demo pasó de 6 a 26 servicios durante la práctica).
+public sealed record CatalogReporte(string Tenant, int Servicios);
+
 public sealed record Resumen(
     string Escenario, string Modelo, int Total, int Pass, double Tasa,
     double SegPromedio, double SegP90,
@@ -43,6 +59,9 @@ public sealed record Resumen(
     // El sync del escenario: se agrega después de Calcular (el resumen no sabe
     // del índice, el runner sí).
     public IReadOnlyList<SyncReporte> Sync { get; init; } = [];
+
+    // El catálogo vivo contra el que se calculó el ground truth dinámico.
+    public IReadOnlyList<CatalogReporte> Catalogo { get; init; } = [];
 
     // Los casos que no se pudieron verificar (no son pass ni fail).
     public int Saltados { get; init; }
@@ -116,6 +135,12 @@ public sealed record Corrida(
     // perilla ForzarContextoK): el groundedness se mide contra esto, no contra
     // los hits crudos.
     public List<string> Contexto { get; init; } = [];
+
+    // Los service_id de los chunks que COMPUSIERON ese contexto real, en el
+    // mismo orden. El ground truth del retrieval se decide por ID (el texto
+    // canónico identifica al servicio), no parseando el chunk: por eso el
+    // contexto lleva su lista de ids y no sólo sus textos.
+    public IReadOnlyList<Guid> ContextoIds { get; init; } = [];
 
     // La respuesta NO la produjo el modelo: la armó el runner (el fail-closed
     // del tenant vacío, B3). Sirve para que el verificador no atribuya al

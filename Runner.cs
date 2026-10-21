@@ -31,10 +31,18 @@ public static class Runner
                 "No encontré los dos tenants de la batería en businesscore " +
                 $"('{Casos.TenantPepe}' y '{Casos.TenantDemo}').");
 
+        // El catálogo canónico VIVO de cada tenant: los servicios de BC y el
+        // texto EXACTO que se indexa (BcLectura.TextoCanonico). Es la fuente
+        // del sync y, sobre todo, el GROUND TRUTH DINÁMICO de los casos de
+        // retrieval: el KValido se calcula contra esta lista.
+        var catalogo = await CatalogoAsync(bc, mapa);
+        foreach (var c in catalogo.Values.OrderBy(c => c.Tenant, StringComparer.OrdinalIgnoreCase))
+            Console.WriteLine($"  catálogo · {c.Tenant}: {c.Servicios.Count} servicio(s) activo(s)");
+
         // 1) Sync del índice. Si el índice está desactualizado, los casos de
         //    retrieval fallan por una razón que NO es del sistema: el número
         //    del sync queda escrito en la salida y en el boletín.
-        var sync = await SincronizarAsync(indice, bc, mapa, embeddings);
+        var sync = await SincronizarAsync(indice, catalogo, embeddings);
         foreach (var s in sync)
             Console.WriteLine($"  sync · {s.Tenant}: {s.Nuevos} nuevos, {s.Actualizados} actualizados, {s.Borrados} borrados");
 
@@ -54,8 +62,15 @@ public static class Runner
         {
             var sw = Stopwatch.StartNew();
             Corrida corrida;
+            // El ground truth dinámico del caso (sólo los de retrieval lo
+            // usan): los servicios del tenant cuyo texto canónico contiene el
+            // texto esperado, contra el catálogo VIVO. Va DENTRO del try: si
+            // el catálogo no se puede leer, el caso falla (no se cuelga la
+            // corrida entera).
+            GroundTruth? gt = null;
             try
             {
+                gt = caso.EsperaTexto is not null ? GroundTruthDe(caso, catalogo) : null;
                 corrida = await EjecutarAsync(caso, esc, env, mapa, embeddings, indice, generador);
             }
             catch (Exception ex)
@@ -64,7 +79,7 @@ public static class Runner
             }
             sw.Stop();
 
-            var veredicto = Verificadores.Verificar(caso, corrida, derivaCtx);
+            var veredicto = Verificadores.Verificar(caso, corrida, derivaCtx, gt);
             var r = new Resultado(caso.Id, caso.Grupo, esc.Nombre, esc.Modelo,
                 veredicto.Paso, sw.Elapsed.TotalSeconds,
                 corrida.EmbedMs, corrida.BusquedaMs, corrida.GeneracionMs,
@@ -74,7 +89,14 @@ public static class Runner
             Console.WriteLine($"  {r.Id,-4} {r.Grupo,-12} {(r.Paso ? "✔" : (r.Skipped ? "-" : "✘"))} {r.Segundos,5:F1}s  {r.Detalle}");
         }
 
-        var resumen = Resumen.Calcular(esc.Nombre, esc.Modelo, resultados) with { Sync = sync };
+        var resumen = Resumen.Calcular(esc.Nombre, esc.Modelo, resultados) with
+        {
+            Sync = sync,
+            Catalogo = catalogo.Values
+                .OrderBy(c => c.Tenant, StringComparer.OrdinalIgnoreCase)
+                .Select(c => new CatalogReporte(c.Tenant, c.Servicios.Count))
+                .ToList()
+        };
         Console.WriteLine($"\n  → {resumen.Pass}/{resumen.Total} ({resumen.Tasa:P0}) · prom {resumen.SegPromedio:F1}s · p90 {resumen.SegP90:F1}s");
         foreach (var g in resumen.PorGrupo.OrderBy(g => g.Key))
         {
@@ -106,20 +128,54 @@ public static class Runner
         return resumen;
     }
 
+    // El catálogo canónico de cada tenant: los servicios VIVOS de BC y el
+    // texto que se indexa (BcLectura.TextoCanonico). Se lee UNA vez por
+    // escenario y alimenta dos cosas: el sync del índice y el ground truth
+    // dinámico de los casos de retrieval.
+    private static async Task<Dictionary<string, CatalogoTenant>> CatalogoAsync(
+        BcLectura bc, Dictionary<string, Guid> mapa)
+    {
+        var catalogo = new Dictionary<string, CatalogoTenant>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (nombre, id) in mapa)
+        {
+            var servicios = await bc.ServiciosDeAsync(id);
+            catalogo[nombre] = new CatalogoTenant(nombre, id,
+                servicios.Select(s => new ServicioCanonico(s.Id, BcLectura.TextoCanonico(s))).ToList());
+        }
+        return catalogo;
+    }
+
+    // El ground truth DINÁMICO de un caso de retrieval: los servicios del
+    // tenant cuyo texto canónico contiene el texto esperado (case-insensitive).
+    //
+    // El "KValido" (cuántas respuestas son IGUALMENTE válidas) es el tamaño de
+    // este conjunto, calculado contra el catálogo VIVO en cada corrida: es una
+    // propiedad del catálogo, no del caso. Por eso no está hardcodeado — el
+    // catálogo de BusinessCore Demo pasó de 6 a 26 servicios durante la
+    // práctica y los K fijos quedaron viejos.
+    private static GroundTruth GroundTruthDe(Caso caso, IReadOnlyDictionary<string, CatalogoTenant> catalogo)
+    {
+        var cat = catalogo[caso.Tenant];
+        var esperados = cat.Servicios
+            .Where(s => s.Texto.Contains(caso.EsperaTexto!, StringComparison.OrdinalIgnoreCase))
+            .Select(s => s.Id)
+            .ToList();
+        return new GroundTruth(esperados, cat.Servicios.Count);
+    }
+
     // El sync: el índice se repuebla desde BC con el SyncAsync de la P8 (nada
     // nuevo: no se crea ninguna tabla ni se siembran datos, sólo se mantiene
     // bc_service_chunks al día con los servicios reales de los dos tenants).
     private static async Task<List<SyncReporte>> SincronizarAsync(
-        Indice indice, BcLectura bc, Dictionary<string, Guid> mapa, Embeddings embeddings)
+        Indice indice, IReadOnlyDictionary<string, CatalogoTenant> catalogo, Embeddings embeddings)
     {
         var reportes = new List<SyncReporte>();
-        foreach (var (nombre, id) in mapa)
+        foreach (var (nombre, cat) in catalogo)
         {
-            var servicios = await bc.ServiciosDeAsync(id);
-            var actuales = servicios
-                .Select(s => { var t = BcLectura.TextoCanonico(s); return (s.Id, Texto: t, Hash: BcLectura.Hash(t)); })
+            var actuales = cat.Servicios
+                .Select(s => (s.Id, Texto: s.Texto, Hash: BcLectura.Hash(s.Texto)))
                 .ToList();
-            var rep = await indice.SyncAsync(id, actuales, embeddings);
+            var rep = await indice.SyncAsync(cat.BusinessId, actuales, embeddings);
             reportes.Add(new SyncReporte(nombre, rep.Nuevos, rep.Actualizados, rep.Borrados));
         }
         return reportes;
@@ -281,12 +337,19 @@ public static class Runner
             return new Corrida("No tengo esa información.", [], null, null, q2ms, busquedaMs, 0, null)
             { HitsAjenos = ajenos, RespuestaSintetica = true };
 
-        var contexto = hits2.Select(h => h.Texto).ToList();
-        if (esc.ForzarContextoK is int fck) contexto = contexto.Take(fck).ToList();
+        // El contexto que se le manda al modelo: los chunks recuperados, con
+        // la perilla de k recortando lo que llega. Los ids viajan con los
+        // textos (el ground truth se decide por id de servicio).
+        var recorte = esc.ForzarContextoK is int fck ? hits2.Take(fck).ToList() : hits2;
+        var contexto = recorte.Select(h => h.Texto).ToList();
 
         var (respuesta, prompt) = await generador.GenerarAsync(http, modelo, caso.Tenant, contexto, caso.Pregunta);
         return new Corrida(respuesta, hits2, null, null, q2ms, busquedaMs, generador.UltimaGeneracionMs, prompt)
-        { Contexto = contexto, HitsAjenos = ajenos };
+        {
+            Contexto = contexto,
+            ContextoIds = recorte.Select(h => h.ServiceId).ToList(),
+            HitsAjenos = ajenos
+        };
     }
 
     // Los hits que NO son del tenant pedido. Se consulta la tabla del índice por

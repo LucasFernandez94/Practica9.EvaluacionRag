@@ -14,11 +14,15 @@ public sealed record Caso
     public required string Tenant { get; init; }       // "Negocio de Pepe" | "BusinessCore Demo"
     public required string Pregunta { get; init; }
 
-    // Ground truth del retrieval: el texto esperado (substring) y cuántos
-    // resultados son IGUALMENTE válidos. Con las 6 "Consultas" idénticas, KValido
-    // es 3 para "la consulta de $1500": exigir recall@1 ahí sería un error del test.
+    // Ground truth del retrieval: el texto esperado (substring del texto
+    // canónico). NO hay un KValido hardcodeado: el "cuántas respuestas son
+    // IGUALMENTE válidas" se calcula en runtime contra el catálogo VIVO de
+    // BusinessCore (ver GroundTruth en Verificadores.cs y GroundTruthDe en
+    // Runner.cs), porque es una propiedad del CATÁLOGO: el de BusinessCore
+    // Demo pasó de 6 a 26 servicios durante la práctica y un K fijo quedó
+    // viejo. El pass es "hay al menos una respuesta válida en el contexto
+    // que recibió el modelo".
     public string? EsperaTexto { get; init; }
-    public int KValido { get; init; } = 1;
 
     // La respuesta NO debe contener estos strings (datos de otro tenant, inventos).
     // REGLA: ninguna cadena prohibida puede aparecer en la propia pregunta del
@@ -59,33 +63,34 @@ public static class Casos
     {
         // ---------- R · Retrieval (10) ----------
         new() { Id = "R1", Grupo = "Retrieval", Tenant = TenantPepe,
-            Pregunta = "¿cuánto sale Panchos?", EsperaTexto = "Panchos", KValido = 1 },
+            Pregunta = "¿cuánto sale Panchos?", EsperaTexto = "Panchos" },
         new() { Id = "R2", Grupo = "Retrieval", Tenant = TenantPepe,
-            Pregunta = "precio del servicio de moztaza", EsperaTexto = "Panchos", KValido = 1,
+            Pregunta = "precio del servicio de moztaza", EsperaTexto = "Panchos",
             Nota = "paráfrase: el nombre del servicio no está en la pregunta" },
         new() { Id = "R3", Grupo = "Retrieval", Tenant = TenantPepe,
-            Pregunta = "¿qué precio tiene el servicio Panchos?", EsperaTexto = "Panchos", KValido = 1 },
+            Pregunta = "¿qué precio tiene el servicio Panchos?", EsperaTexto = "Panchos" },
         new() { Id = "R4", Grupo = "Retrieval", Tenant = TenantPepe,
-            Pregunta = "cuánto dura la moztaza", EsperaTexto = "Panchos", KValido = 1,
+            Pregunta = "cuánto dura la moztaza", EsperaTexto = "Panchos",
             Nota = "pregunta por duración, no por precio" },
         new() { Id = "R5", Grupo = "Retrieval", Tenant = TenantDemo,
-            Pregunta = "consulta de 1500 pesos", EsperaTexto = "$1500.00", KValido = 3,
-            Nota = "3 consultas cuestan $1500: ninguno es más correcto que otro" },
+            Pregunta = "consulta de 1500 pesos", EsperaTexto = "$1500.00",
+            Nota = "las consultas de $1500 del tenant: son varias respuestas IGUALMENTE válidas (cuántas, lo dice el catálogo vivo: en la corrida final, 13 de 26) — ninguna es más correcta que otra, así que el pass es \"hay una válida en el contexto\", no \"la primera\"" },
         new() { Id = "R6", Grupo = "Retrieval", Tenant = TenantDemo,
-            Pregunta = "consulta de 1200", EsperaTexto = "$1200.00", KValido = 3 },
+            Pregunta = "consulta de 1200", EsperaTexto = "$1200.00",
+            Nota = "las consultas de $1200 del tenant: varias respuestas IGUALMENTE válidas (el KValido sale del catálogo vivo)" },
         new() { Id = "R7", Grupo = "Retrieval", Tenant = TenantDemo,
-            Pregunta = "¿cuánto sale una consulta médica?", EsperaTexto = "Consulta", KValido = 6,
-            Nota = "no es un recall: el tenant tiene 6 filas (≤8) y la regla adaptativa de la P7/P8 manda el catálogo chico COMPLETO — verifica que las 6 consultas lleguen al contexto" },
+            Pregunta = "¿cuánto sale una consulta médica?", EsperaTexto = "Consulta",
+            Nota = "pregunta por la CATEGORÍA, no por un servicio: el esperado es todo el catálogo. Con el catálogo grande (>8) la regla adaptativa de la P7/P8 manda top-3, así que verifica que una consulta válida llegue al contexto" },
         new() { Id = "R8", Grupo = "Retrieval", Tenant = TenantDemo,
             Pregunta = "precio de la consulta 560df8",
-            EsperaTexto = "Consulta 560df8: $1500.00 ARS, 30 min. Consulta médica", KValido = 1,
-            Nota = "por id: el texto canónico EXACTO (id + precio + duración + descripción), así se verifica el id y no sólo el precio — \"$1500.00\" alcanza en 3 chunks distintos" },
+            EsperaTexto = "Consulta 560df8: $1500.00 ARS, 30 min. Consulta médica",
+            Nota = "por id: el texto canónico EXACTO (id + precio + duración + descripción), así se verifica el id y no sólo el precio. El id hex no está en un campo aparte: es parte del NOMBRE del servicio, y el nombre va en el texto que se embebe — por eso el id SÍ se recupera, incluso con 26 consultas casi idénticas (medido: top-1, score 0.77 contra 0.67 del segundo)" },
         new() { Id = "R9", Grupo = "Retrieval", Tenant = TenantDemo,
-            Pregunta = "duración de las consultas", EsperaTexto = "30 min", KValido = 6,
-            Nota = "no es un recall: el catálogo chico (6 filas ≤ 8) va completo, así que las 6 consultas con su duración llegan al contexto" },
+            Pregunta = "duración de las consultas", EsperaTexto = "30 min",
+            Nota = "pregunta por la duración: el esperado es todo el catálogo. Con el catálogo grande la regla adaptativa manda top-3" },
         new() { Id = "R10", Grupo = "Retrieval", Tenant = TenantDemo,
-            Pregunta = "listame los servicios de consulta", EsperaTexto = "Consulta", KValido = 6,
-            Nota = "no es un recall: el catálogo chico (6 filas ≤ 8) va completo, así que el listado de consultas llega al contexto" },
+            Pregunta = "listame los servicios de consulta", EsperaTexto = "Consulta",
+            Nota = "pregunta por la categoría: el esperado es todo el catálogo. Con el catálogo grande la regla adaptativa manda top-3" },
 
         // ---------- A · Aislamiento (6) ----------
         new() { Id = "A1", Grupo = "Aislamiento", Tenant = TenantPepe,

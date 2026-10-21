@@ -157,8 +157,8 @@ public static class Explorador
         //   - un caso sintético del grupo "Groundedness" → todo precio de la
         //     respuesta está en el contexto. (Al groundedness se le vacían los
         //     hits ajenos: son dos veredictos separados, no uno encadenado.)
-        var verAislamiento = Verificadores.Verificar(Sintetico("Aislamiento"), corrida, null);
-        var verGrounded = Verificadores.Verificar(Sintetico("Groundedness"), corrida with { HitsAjenos = [] }, null);
+        var verAislamiento = Verificadores.Verificar(Sintetico("Aislamiento"), corrida, null, null);
+        var verGrounded = Verificadores.Verificar(Sintetico("Groundedness"), corrida with { HitsAjenos = [] }, null, null);
 
         Console.WriteLine($"   embed: {embedMs}ms · búsqueda (rank): {rankMs}ms · retrieval: {retrievalMs}ms · generación: {genMs}ms");
         Console.WriteLine($"   top-{hits.Count} recuperado (score = 1 - distancia coseno):");

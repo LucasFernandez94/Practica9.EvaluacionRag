@@ -11,12 +11,23 @@ public sealed record Veredicto(bool Paso, string Detalle, bool Skipped = false, 
 // El contexto de la deriva: lo necesita el grupo D.
 public sealed record DerivaContext(IReadOnlyList<ResultadoDrift> Filas, bool Disponible);
 
+// El ground truth DINÁMICO de un caso de retrieval: los servicios del tenant
+// cuyo texto canónico contiene el texto esperado, calculados contra el
+// catálogo VIVO de BusinessCore.
+//
+// Por qué no un KValido hardcodeado en el caso: el catálogo de BusinessCore
+// Demo pasó de 6 a 26 servicios durante la práctica (lo crea la suite de
+// BusinessCore, no esta P9) y los K hardcodeados quedaron viejos. El "cuántas
+// respuestas son igualmente válidas" es una propiedad del CATÁLOGO, así que
+// se calcula en runtime contra el catálogo vivo.
+public sealed record GroundTruth(IReadOnlyList<Guid> Esperados, int TamanoCatalogo);
+
 // Los verificadores: la regla determinista de cada grupo. Sin modelo juzgando
 // al modelo. Todo se decide por COMPORTAMIENTO (presencia, pertenencia,
 // reconstrucción, categoría de error), nunca por texto idéntico.
 public static class Verificadores
 {
-    public static Veredicto Verificar(Caso c, Corrida corrida, DerivaContext? deriva)
+    public static Veredicto Verificar(Caso c, Corrida corrida, DerivaContext? deriva, GroundTruth? gt = null)
     {
         if (c.Grupo == "Deriva") return VerificarDeriva(c, deriva);
 
@@ -90,7 +101,7 @@ public static class Verificadores
         }
 
         if (c.Grupo == "Retrieval" && c.EsperaTexto is not null)
-            return VerificarRecall(c, corrida) with { FraseExacta = fraseExacta };
+            return VerificarRecall(c, corrida, gt) with { FraseExacta = fraseExacta };
         if (c.Grupo == "Groundedness")
             return VerificarGrounded(c, corrida) with { FraseExacta = fraseExacta };
         return new(true, detalle, FraseExacta: fraseExacta);
@@ -140,19 +151,47 @@ public static class Verificadores
         return sb.ToString().Normalize(NormalizationForm.FormC);
     }
 
-    // El texto esperado tiene que estar entre las primeras KValido citas.
-    // KValido > 1 porque hay respuestas IGUALMENTE válidas: exigir recall@1
-    // cuando hay 3 consultas idénticas sería un error del test, no del sistema.
-    private static Veredicto VerificarRecall(Caso c, Corrida corrida)
+    // El PASS del retrieval: "hay AL MENOS UNA respuesta válida en el contexto
+    // que recibió el modelo", es decir, conjunto esperado ∩ contexto
+    // recuperado ≠ ∅. Se decide por ID de servicio (el texto canónico
+    // identifica al servicio), no por substring.
+    //
+    // Por qué el criterio es éste y no "el esperado entre las primeras K":
+    // el KValido (cuántas respuestas son igualmente válidas) es una propiedad
+    // del CATÁLOGO, y el catálogo de BusinessCore Demo pasó de 6 a 26 servicios
+    // durante la práctica: con un K hardcodeado el caso medía una expectativa
+    // que ya no existía, y con el SQL devolviendo top-3 la exigencia
+    // "el esperado entre las primeras 13" era imposible de satisfacer de
+    // forma significativa. El conjunto esperado se calcula contra el catálogo
+    // vivo y el pass es la intersección no vacía.
+    //
+    // Y si el conjunto esperado está VACÍO (el dato que el caso esperaba ya no
+    // existe en el catálogo), el caso se SKIPEA: su ground truth se evaporó,
+    // no lo falló el sistema. Queda en el boletín como saltado.
+    private static Veredicto VerificarRecall(Caso c, Corrida corrida, GroundTruth? gt)
     {
-        var k = Math.Max(1, c.KValido);
-        var top = corrida.Hits.Take(k).ToList();
-        var ok = top.Any(h => h.Texto.Contains(c.EsperaTexto!, StringComparison.OrdinalIgnoreCase));
-        var pos = corrida.Hits.FindIndex(h => h.Texto.Contains(c.EsperaTexto!, StringComparison.OrdinalIgnoreCase));
-        var detalle = pos >= 0
-            ? $"\"{c.EsperaTexto}\" en la posición {pos + 1}/{corrida.Hits.Count} (KValido={k})"
-            : $"\"{c.EsperaTexto}\" NO aparece en el top-{corrida.Hits.Count}";
-        return new(ok, detalle);
+        if (gt is null)
+            return new(false, "no se pudo calcular el ground truth contra el catálogo vivo");
+
+        if (gt.Esperados.Count == 0)
+            return new(false,
+                $"SKIPPED: el catálogo ya no tiene \"{c.EsperaTexto}\" (el ground truth se evaporó)",
+                true);
+
+        var esperados = gt.Esperados.ToHashSet();
+        var ctx = corrida.ContextoIds;           // los chunks que le llegaron al modelo
+        var k = ctx.Count;                       // el k EFECTIVO
+        var pos = -1;
+        for (var i = 0; i < ctx.Count; i++)
+            if (esperados.Contains(ctx[i])) { pos = i; break; }
+        var recall1 = k > 0 && esperados.Contains(ctx[0]);
+
+        var detalle = $"\"{c.EsperaTexto}\" → {gt.Esperados.Count} válidos de {gt.TamanoCatalogo} del catálogo · " +
+                      (pos >= 0
+                          ? $"1er hit válido en la posición {pos + 1}/{k}"
+                          : $"ningún hit válido en los {k} chunk(s)") +
+                      $" · recall@1 {(recall1 ? "✔" : "✘")} · k={k}";
+        return new(pos >= 0, detalle);
     }
 
     // Groundedness: todo precio que aparece en la respuesta tiene que existir

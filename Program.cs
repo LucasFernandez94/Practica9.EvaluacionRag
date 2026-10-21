@@ -197,7 +197,7 @@ static void ListarCasos(IReadOnlyList<Caso> casos)
     {
         Console.WriteLine($"  {c.Id,-4} {c.Grupo,-12} {c.Tenant,-18} {c.Pregunta}");
         var expectativas = new List<string>();
-        if (c.EsperaTexto is not null) expectativas.Add($"espera \"{c.EsperaTexto}\" (K={c.KValido})");
+        if (c.EsperaTexto is not null) expectativas.Add($"espera \"{c.EsperaTexto}\" (válidos: los del catálogo vivo)");
         if (c.ExigeNoInfo) expectativas.Add("rechazo esperado");
         if (c.ExigeSinSystemPrompt) expectativas.Add("sin system prompt");
         if (c.ExigeError is not null) expectativas.Add($"error esperado: {c.ExigeError}");
