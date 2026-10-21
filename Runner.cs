@@ -19,7 +19,7 @@ public static class Runner
 
         var http = env.HttpFactory("http://localhost:11434");
         using var httpScope = http;
-        var embeddings = new Embeddings(http);
+        var embeddings = new Embeddings(http, env.ModelEmbed);
         var indice = new Indice(env.ConnStrPg);
         var generador = new Generador { PromptAdicional = esc.PromptAdicional };
 
@@ -160,7 +160,7 @@ public static class Runner
         var modelo = caso.ExigeError == "modelo" ? "no-existe:0b" : esc.Modelo;
 
         // El cliente de embeddings: en B5 tiene que ser el que pegue al fake.
-        var emb = caso.ExigeError == "embeddings" ? new Embeddings(http) : embeddings;
+        var emb = caso.ExigeError == "embeddings" ? new Embeddings(http, env.ModelEmbed) : embeddings;
 
         // B3: tenant vacío → fail-closed, NO es un error. El caso lo declara con
         // ExigeNoInfo (no con ExigeError), así que el runner lo reconoce por esa
