@@ -1,5 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+// EVAL: COPIA de Practica8.RagPostgres/Embeddings.cs @ 500ecad.
+// EVAL: Editá SOLO con líneas marcadas // EVAL: el check de deriva compara contra el original.
 
 namespace Practica8.RagPostgres;
 
@@ -34,6 +36,7 @@ public sealed class Embeddings(HttpClient ollamaHttp, string model = "nomic-embe
     private async Task<List<float[]>> EmbedPrefijadosAsync(List<string> prefijados)
     {
         if (prefijados.Count == 0) return [];
+        var sw = System.Diagnostics.Stopwatch.StartNew(); // EVAL: medición (P9) del POST /api/embed
         try
         {
             // El `using` va ACÁ: si EnsureSuccessStatusCode() o la lectura del body
@@ -42,6 +45,7 @@ public sealed class Embeddings(HttpClient ollamaHttp, string model = "nomic-embe
                 new { model = model, input = prefijados });
             response.EnsureSuccessStatusCode();
             using var doc = await response.Content.ReadFromJsonAsync<JsonDocument>();
+            UltimoEmbedMs = sw.ElapsedMilliseconds; // EVAL: medición (P9)
             return doc!.RootElement.GetProperty("embeddings").EnumerateArray()
                 .Select(e => e.EnumerateArray().Select(n => n.GetSingle()).ToArray()).ToList();
         }
@@ -56,4 +60,5 @@ public sealed class Embeddings(HttpClient ollamaHttp, string model = "nomic-embe
                 $"Ollama no respondió a tiempo para los embeddings. ¿Está saturado? ¿Tenés el modelo? ollama pull {model}", ex);
         }
     }
+    public long UltimoEmbedMs { get; private set; } // EVAL: medición (P9) — el original no tiene esto
 }

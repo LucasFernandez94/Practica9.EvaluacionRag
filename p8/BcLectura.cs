@@ -2,6 +2,8 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Npgsql;
+// EVAL: COPIA de Practica8.RagPostgres/BcLectura.cs @ 500ecad.
+// EVAL: Editá SOLO con líneas marcadas // EVAL: el check de deriva compara contra el original.
 
 namespace Practica8.RagPostgres;
 

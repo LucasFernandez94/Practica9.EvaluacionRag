@@ -1,4 +1,6 @@
 using Npgsql;
+// EVAL: COPIA de Practica8.RagPostgres/Indice.cs @ 500ecad.
+// EVAL: Editá SOLO con líneas marcadas // EVAL: el check de deriva compara contra el original.
 
 namespace Practica8.RagPostgres;
 
@@ -140,7 +142,9 @@ public sealed class Indice(string connStr)
         // maximo <= 0 daría LIMIT 0 → lista vacía → un "No tengo esa información."
         // falso. El corte mínimo es 1 chunk.
         var k = total <= 8 ? total : Math.Max(1, maximo);
+        if (ForzarK is int fk) k = Math.Min(fk, k); // EVAL: forzado de k (P9) — el SQL devuelve menos filas, no menos contexto
 
+        var swBusqueda = System.Diagnostics.Stopwatch.StartNew(); // EVAL: medición (P9) — el stopwatch cierra al final del SELECT, no acá: si cerrara acá mediría 0 ms
         await using var rank = new NpgsqlCommand(
             @"SELECT service_id, texto, 1 - (embedding <=> @q::vector) AS score
               FROM bc_service_chunks
@@ -159,6 +163,9 @@ public sealed class Indice(string connStr)
         await using var r = await rank.ExecuteReaderAsync();
         while (await r.ReadAsync())
             hits.Add(new Hit(r.GetGuid(0), r.GetString(1), r.GetDouble(2)));
+        UltimaBusquedaMs = swBusqueda.ElapsedMilliseconds; // EVAL: medición (P9) del SELECT de ranking
         return hits;
     }
+    public long UltimaBusquedaMs { get; private set; } // EVAL: medición (P9)
+    public int? ForzarK { get; set; } // EVAL: forzado de k para el barrido de la P9
 }
