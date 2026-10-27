@@ -45,7 +45,7 @@ public sealed class Generador
     private JsonObject ArmarBody(string modelo, string negocio, List<string> contexto, string pregunta)
     {
         var prompt = PromptDe(negocio);
-        return new JsonObject
+        var body = new JsonObject
         {
             ["model"] = modelo,
             ["messages"] = new JsonArray
@@ -57,6 +57,11 @@ public sealed class Generador
             ["stream"] = false,
             ["options"] = new JsonObject { ["temperature"] = 0 }
         };
+        // thinking OFF: en CPU el modo thinking de qwen3.5 dispara la latencia
+        // (medido: 187s vs 3.5s para la misma respuesta). Para los modelos que
+        // no thinkean el campo es un no-op verificado (mismos tokens, misma respuesta).
+        body["think"] = false;
+        return body;
     }
 
     public async Task<(string Respuesta, string? Prompt)> GenerarAsync(

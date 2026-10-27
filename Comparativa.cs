@@ -15,8 +15,14 @@ public static class Comparativa
 
     public static IReadOnlyList<Escenario> Escenarios() => new[]
     {
-        new Escenario("E1-llama32", "llama3.2:3b"),
-        new Escenario("E1-qwen25", "qwen2.5:1.5b"),
+        // E1: el MISMO set de casos contra cada modelo local. De más chico a más grande:
+        // el objetivo es decidir con números cuáles 2 modelos quedan para las prácticas.
+        new Escenario("E1-qwen25-1.5b", "qwen2.5:1.5b"),
+        new Escenario("E1-granite3.3-2b", "granite3.3:2b"),
+        new Escenario("E1-llama32-3b", "llama3.2:3b"),
+        new Escenario("E1-qwen3.5-4b", "qwen3.5:4b"),
+        new Escenario("E1-granite3.3-8b", "granite3.3:8b"),
+        new Escenario("E1-qwen3.5-9b", "qwen3.5:9b"),
         new Escenario("E2-prompt-p8", "llama3.2:3b"),
         new Escenario("E2-prompt-estricto", "llama3.2:3b", PromptEstricto),
         new Escenario("E3-k1", "llama3.2:3b", ForzarK: 1, ForzarContextoK: 1),

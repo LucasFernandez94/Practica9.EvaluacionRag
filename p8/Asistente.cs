@@ -47,6 +47,7 @@ public sealed class Asistente(HttpClient ollamaHttp, Indice indice, Embeddings e
             ["stream"] = false,
             ["options"] = new JsonObject { ["temperature"] = 0 }
         };
+        body["think"] = false; // EVAL: thinking OFF (P9) — en CPU el thinking de qwen3.5 dispara la latencia (medido: 187s vs 3.5s para la misma respuesta)
         UltimoBody = body.ToJsonString(); // EVAL: captura del body COMPLETO de la request (P9) — para verificar la P9 entera contra la P8
         try
         {
